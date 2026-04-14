@@ -14,7 +14,11 @@
 </head>
 <body>
 
-<nav class="sb">
+<!-- Mobile hamburger menu -->
+<button class="sb-toggle" id="sb-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+<div class="sb-overlay" id="sb-overlay" onclick="toggleSidebar()"></div>
+
+<nav class="sb" id="sidebar">
   <div class="sb-logo">
     <div class="sb-icon">Ƒ</div>
     <div class="sb-name"><strong>FinBotics</strong><span>Grocery Suite</span></div>
