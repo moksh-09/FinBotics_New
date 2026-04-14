@@ -216,7 +216,23 @@ function parseGrocery(text, fname) {
       if (gstin) break;
     }
   }
-
+  
+  // Tier 5: Strip spaces and search — Tesseract often inserts spaces into GSTIN
+  if (!gstin) {
+    for (const line of lines) {
+      const stripped = line.replace(/\s/g, '').toUpperCase();
+      // Look for GSTIN label + value
+      const gstinIdx = stripped.indexOf('GSTIN');
+      if (gstinIdx >= 0) {
+        const after = stripped.substring(gstinIdx + 5).replace(/^[:\s]+/, '');
+        const m = after.match(/^([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z])/);
+        if (m) { gstin = m[1]; break; }
+      }
+      // Also try without label
+      const m2 = stripped.match(/([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z])/);
+      if (m2) { gstin = m2[1]; break; }
+    }
+  }
   const items = extractItems(lines);
 
   // Compute per-item GST
@@ -253,18 +269,22 @@ function detectStore(tl, fl) {
   if (tl.includes('reliance smart') || tl.includes('jiomart') || fl.includes('reliance')) return 'Reliance Smart';
   if (tl.includes('zepto') || fl.includes('zepto')) return 'Zepto';
   if (tl.includes('swiggy instamart') || fl.includes('instamart')) return 'Swiggy Instamart';
-  if (tl.includes('more supermarket') || fl.includes('more')) return 'More Supermarket';
+  if (tl.includes('more supermarket') || tl.includes('more retail') || fl.includes('more')) return 'More Supermarket';
   if (tl.includes('star bazaar')) return 'Star Bazaar';
   return 'Grocery Store';
 }
 
-/* ─── ITEM EXTRACTION: 3-STRATEGY ENGINE ─── */
-const SKIP = /^(item|desc|particular|product|sl|s\.no|qty|quantity|rate|price|amount|total|subtotal|grand|gst|cgst|sgst|igst|discount|mrp|tax|net|bill|invoice|date|address|gstin|pan|thank|save|cash|upi|card|paid|balance|change|mode|payment|customer|phone|mob|email|www|tel|fax|cin|hsn|sac|voucher|barcode|weight|unit|kg|gm|ml|lt|pcs|nos)/i;
+/* ─── ITEM EXTRACTION: MULTI-STRATEGY ENGINE ─── */
+const SKIP = /^(item\s*name|item|desc|particular|product|sl\.?\s*no|s\.?no|qty|quantity|rate|price|amount|total|subtotal|sub\s*total|grand|gst|cgst|sgst|igst|discount|mrp|tax|net|bill|invoice|date|address|gstin|pan|thank|save|cash|upi|card|paid|balance|change|mode|payment|customer|phone|mob|email|www|tel|fax|cin|hsn|sac|voucher|barcode|weight|unit)/i;
+
+const SKIP_LINE = /^[\-\*\=\|\.\_ \s#@₹Rs\.]+$|^(subtotal|sub total|total|grand total|total gst|total amount|thank you|mode of|payment|customer|address)/i;
 
 function isSkip(l) {
   if (!l || l.length < 3) return true;
-  const w = l.trim().split(/\s+/)[0];
-  return SKIP.test(w) || /^[\-\*\=\|\.\_\s#@₹]+$/.test(l);
+  const trimmed = l.trim();
+  if (SKIP_LINE.test(trimmed)) return true;
+  const w = trimmed.split(/\s+/)[0];
+  return SKIP.test(w);
 }
 
 function extractItems(lines) {
@@ -272,8 +292,9 @@ function extractItems(lines) {
   const seen = new Set();
 
   const add = (name, qty, mrp, rate, gst, total) => {
-    name = name.replace(/^\d+[\.\)]\s*/, '').trim();
-    if (!name || name.length < 3 || isSkip(name)) return;
+    name = name.replace(/^\d+[\.\/\)]\s*/, '').trim();
+    name = name.replace(/\s+/g, ' '); // Normalize spaces
+    if (!name || name.length < 2 || isSkip(name)) return;
     if (!/[a-zA-Z]/.test(name)) return;
     const key = name.toLowerCase().slice(0, 16) + '|' + total.toFixed(0);
     if (seen.has(key)) return;
@@ -281,55 +302,131 @@ function extractItems(lines) {
     items.push({ name, qty, mrp, rate, gst, total });
   };
 
-  // Strategy BB: BigBasket/standard invoice format
-  // "Name Qty MRP Rate GST% Amount"  e.g. "Tata Salt 1kg 2 24.00 22.00 0% 44.00"
+  // ============================================================
+  // STRATEGY A (PRIMARY): Universal multi-number line parser
+  // Works for ANY tabular bill by extracting ALL numbers from 
+  // each line, then using the LAST number as Amount.
+  // This handles: Name Qty MRP Rate GST% Amount (6 cols)
+  //               Name Qty MRP Rate Amount       (5 cols)
+  //               Name Qty Rate Amount            (4 cols)
+  //               Name Qty Amount                 (3 cols)
+  // ============================================================
   for (const line of lines) {
     if (isSkip(line)) continue;
-    const m = line.match(/^(.{3,60}?)\s+(\d{1,4}(?:\.\d{0,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+(\d{1,2})%\s+([\d,]+(?:\.\d{1,2})?)$/);
-    if (m) {
-      const name = m[1].trim(), qty = parseFloat(m[2]), mrp = parseFloat(m[3].replace(/,/g, '')), rate = parseFloat(m[4].replace(/,/g, '')), gst = parseInt(m[5]), amt = parseFloat(m[6].replace(/,/g, ''));
-      if (qty > 0 && qty <= 9999 && rate > 0 && amt > 0) add(name, qty, mrp, rate, gst, amt);
+    
+    // Split line into text prefix and number suffix
+    // Find where the numbers start: look for the first number that's preceded by whitespace
+    const trimmed = line.trim();
+    
+    // Extract all numbers from the line (including decimals)
+    const numberPattern = /[\d,]+(?:\.\d{1,2})?/g;
+    const allNumbers = [];
+    let lastIdx = 0;
+    let match;
+    while ((match = numberPattern.exec(trimmed)) !== null) {
+      allNumbers.push({ val: parseFloat(match[0].replace(/,/g, '')), idx: match.index, raw: match[0] });
+      lastIdx = match.index + match[0].length;
     }
+    
+    if (allNumbers.length < 2) continue; // Need at least qty + amount
+    
+    // Find the item name: text before the first number, but only if it contains letters
+    let nameEnd = allNumbers[0].idx;
+    let name = trimmed.substring(0, nameEnd).trim();
+    
+    // If the first "number" is actually part of the name (e.g., "Rock Salt 1kg"),
+    // check if it's followed immediately by letters (no space) — then it's part of name
+    if (allNumbers.length >= 3 && /\d+[a-zA-Z]/.test(trimmed.substring(allNumbers[0].idx, allNumbers[0].idx + allNumbers[0].raw.length + 3))) {
+      // First number is part of the name (like "1kg", "500g", "200ml")
+      nameEnd = allNumbers[1].idx;
+      name = trimmed.substring(0, nameEnd).trim();
+      allNumbers.shift(); // Remove this number from consideration
+    }
+    
+    if (!name || name.length < 2 || !/[a-zA-Z]{2}/.test(name)) continue;
+    if (isSkip(name)) continue;
+
+    const nums = allNumbers.map(n => n.val).filter(n => !isNaN(n) && n >= 0);
+    if (nums.length < 2) continue;
+
+    // The LAST number is always the Amount (total for that item)
+    const amount = nums[nums.length - 1];
+    if (amount <= 0 || amount > 500000) continue;
+    
+    // Detect GST% if present: look for a number followed by % in the original line
+    let gstPct = -1;
+    const gstMatch = trimmed.match(/(\d{1,2})\s*%/);
+    if (gstMatch) gstPct = parseInt(gstMatch[1]);
+    
+    // First small number (<=9999) is likely the Qty
+    let qty = 1;
+    for (let i = 0; i < nums.length - 1; i++) {
+      if (nums[i] > 0 && nums[i] <= 500 && nums[i] === Math.floor(nums[i]) || nums[i] < 10) {
+        qty = nums[i];
+        break;
+      }
+    }
+    if (qty <= 0) qty = 1;
+    
+    // Rate: if we have MRP and Rate columns, rate is usually the second-to-last number
+    // (before GST% if present, otherwise before Amount)
+    let rate = amount / qty;
+    if (nums.length >= 3) {
+      // Second-to-last number (skipping GST% which would be small like 5, 12, 18, 28)
+      const rateIdx = nums.length - 2;
+      const candidateRate = nums[rateIdx];
+      // Check if this could be a GST percentage (0, 5, 12, 18, 28)
+      if ([0, 5, 12, 18, 28].includes(candidateRate) && nums.length >= 4) {
+        rate = nums[rateIdx - 1]; // Skip the GST%, use the one before it as rate
+      } else if (candidateRate > 0 && candidateRate < 500000) {
+        rate = candidateRate;
+      }
+    }
+    
+    // MRP: usually the number before rate
+    let mrp = rate;
+    if (nums.length >= 4) {
+      // Find MRP (should be >= rate)
+      for (let i = 1; i < nums.length - 2; i++) {
+        if (nums[i] >= rate && nums[i] < 500000) {
+          mrp = nums[i];
+          break;
+        }
+      }
+    }
+    
+    // Determine GST
+    const gst = gstPct >= 0 ? gstPct : gstFor(name);
+    
+    // Validate: amount should roughly equal qty * rate (within 50% tolerance for OCR errors)
+    const expectedAmt = qty * rate;
+    if (expectedAmt > 0 && Math.abs(amount - expectedAmt) / expectedAmt > 0.6 && nums.length > 2) {
+      // Amount doesn't match qty*rate, so recalculate rate from amount
+      rate = amount / qty;
+      mrp = Math.max(mrp, rate);
+    }
+
+    add(name, qty, mrp, rate, gst, amount);
   }
 
-  // Strategy BB2: "Name Qty MRP Rate Amount" (no GST% column but 5 numbers)
-  // e.g. D-Mart or Reliance bills with MRP column
-  if (items.length < 2) {
+  // ============================================================
+  // STRATEGY B: BigBasket/standard invoice format (strict regex)
+  // "Name Qty MRP Rate GST% Amount"
+  // ============================================================
+  if (items.length < 3) {
     for (const line of lines) {
       if (isSkip(line)) continue;
-      const m = line.match(/^(.{3,55}?)\s+(\d{1,4}(?:\.\d{0,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{1,2})?)$/);
+      const m = line.match(/^(.{3,60}?)\s+(\d{1,4}(?:\.\d{0,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{1,2})?)\s+(\d{1,2})%\s+([\d,]+(?:\.\d{1,2})?)$/);
       if (m) {
-        const name = m[1].trim(), qty = parseFloat(m[2]), mrp = parseFloat(m[3].replace(/,/g, '')), rate = parseFloat(m[4].replace(/,/g, '')), amt = parseFloat(m[5].replace(/,/g, ''));
-        if (qty > 0 && qty <= 9999 && rate > 0 && amt > 0 && Math.abs(amt - qty * rate) / (qty * rate) < 0.35)
-          add(name, qty, mrp, rate, gstFor(name), amt);
+        const name = m[1].trim(), qty = parseFloat(m[2]), mrp = parseFloat(m[3].replace(/,/g, '')), rate = parseFloat(m[4].replace(/,/g, '')), gst = parseInt(m[5]), amt = parseFloat(m[6].replace(/,/g, ''));
+        if (qty > 0 && qty <= 9999 && rate > 0 && amt > 0) add(name, qty, mrp, rate, gst, amt);
       }
     }
   }
 
-  // Strategy 0: ItemID Qty Units Name Price (XLant / kirana style)
-  // "AMNIL 2 No(s) Amul Ice cream - Vanilla 220.00"
-  for (const line of lines) {
-    if (isSkip(line)) continue;
-    const m = line.match(/^([A-Z0-9]{2,10})\s+(\d{1,4})\s+\S+\s+(.{3,60}?)\s+([\d,]{1,8}(?:\.\d{1,2})?)$/);
-    if (m) {
-      const qty = parseFloat(m[2]), name = m[3].trim(), amt = parseFloat(m[4].replace(/,/g, ''));
-      if (qty > 0 && amt > 0 && /[a-zA-Z]{3}/.test(name))
-        add(name, qty, amt / qty, amt / qty, gstFor(name), amt);
-    }
-  }
-
-  // Strategy 1: Name Qty Rate Amount
-  for (const line of lines) {
-    if (isSkip(line)) continue;
-    const m = line.match(/^(.{3,55}?)\s+(\d{1,5}(?:\.\d{0,3})?)\s+([\d,]{1,8}(?:\.\d{1,2})?)\s+([\d,]{1,8}(?:\.\d{1,2})?)$/);
-    if (m) {
-      const name = m[1].trim(), qty = parseFloat(m[2]), rate = parseFloat(m[3].replace(/,/g, '')), amt = parseFloat(m[4].replace(/,/g, ''));
-      if (qty > 0 && qty <= 9999 && rate > 0 && amt > 0 && Math.abs(amt - qty * rate) / (qty * rate) < 0.35)
-        add(name, qty, rate, rate, gstFor(name), amt);
-    }
-  }
-
-  // Strategy 2: Qty x Name Amount
+  // ============================================================
+  // STRATEGY C: Qty x Name Amount
+  // ============================================================
   if (items.length < 3) {
     for (const line of lines) {
       if (isSkip(line)) continue;
@@ -341,76 +438,18 @@ function extractItems(lines) {
     }
   }
 
-  // Strategy 3: SNo + Name + HSN(4dig) + numbers + Amount at end
+  // ============================================================
+  // STRATEGY D: Name ... Amount (2-column fallback)
+  // ============================================================
   if (items.length < 2) {
     for (const line of lines) {
       if (isSkip(line)) continue;
-      const m = line.match(/^(\d+\s+)?(.{3,50}?)\s+\d{4}\s+[\d,\s]+?([\d,]{1,8}(?:\.\d{1,2})?)$/);
+      const m = line.match(/^(.{4,52}?)\s{2,}([\d,]{1,9}(?:\.\d{1,2})?)$/);
       if (m) {
-        const name = m[2].trim(), amt = parseFloat(m[3].replace(/,/g, ''));
-        if (amt > 0 && name.length > 3 && /[a-zA-Z]{3}/.test(name))
-          add(name, 1, amt, amt, gstFor(name), amt);
-      }
-    }
-  }
-
-  // Strategy 4: Name ... Amount (2-column fallback)
-  if (items.length < 2) {
-    for (const line of lines) {
-      if (isSkip(line)) continue;
-      const m = line.match(/^(.{4,52}?)\s{3,}([\d,]{1,9}(?:\.\d{1,2})?)$/);
-      if (m) {
-        const name = m[1].replace(/^\d+[\.\)]\s*/, '').trim();
+        const name = m[1].replace(/^\d+[\.\/\)]\s*/, '').trim();
         const amt = parseFloat(m[2].replace(/,/g, ''));
         if (amt > 0.5 && amt < 200000 && name.length >= 3 && /[a-zA-Z]{3}/.test(name))
           add(name, 1, amt, amt, gstFor(name), amt);
-      }
-    }
-  }
-
-  // Strategy 5: OCR Fuzzy Fallback
-  // Handles messy Tesseract output by looking for a text blob followed by 2 to 6 numbers separated by spaces
-  if (items.length < 2) {
-    for (const line of lines) {
-      if (isSkip(line)) continue;
-      
-      // Clean up common OCR noise (O->0, l/I->1, comma->dot) exclusively in the trailing number block
-      let cleanLine = line.replace(/\s+([0-9OoIl\.\,\s]+)$/, (match, p1) => {
-        return ' ' + p1.replace(/[Oo]/g, '0').replace(/[Il]/g, '1').replace(/,/g, '.');
-      });
-
-      // Match: Item Name [Space] List of Numbers
-      const m = cleanLine.match(/^([a-zA-Z\s\&\-\%\d]{4,55}?)\s+([\d\.\s]+)$/);
-      if (m) {
-        const name = m[1].replace(/^\d+[\.\)]\s*/, '').trim();
-        if(!/[a-zA-Z]{3}/.test(name)) continue; // Must have some letters
-        
-        // Split numbers, discard empty
-        const nums = m[2].trim().split(/\s+/).map(x => parseFloat(x)).filter(x => !isNaN(x) && x > 0);
-        
-        if (nums.length >= 2 && nums.length <= 6) {
-           let qty = nums[0]; // first number is usually qty
-           let total = nums[nums.length - 1]; // last is usually total amount
-           
-           // If OCR merged Qty and Rate (e.g. "124.50" instead of "1 24.50"), try to salvage
-           if (qty > 100 && nums.length === 2) {
-             total = nums[1]; qty = 1;
-           }
-           
-           let rate = nums.length > 2 ? nums[nums.length - 2] : (total / qty);
-           
-           // Sanity check: is qty a reasonable integer (or small decimal) and does rate roughly match?
-           if (qty <= 500 && total >= 1) {
-             let error = Math.abs(total - (qty * rate));
-             // If rate and total perfectly match, set rate
-             if (error < 5 || nums.length === 2) {
-                add(name, qty, rate, rate, gstFor(name), total);
-             } else if (nums.length >= 3) {
-                // Sometime MRP is in between: Qty MRP Amount -> Rate = Amount/Qty
-                add(name, qty, nums[1], total/qty, gstFor(name), total);
-             }
-           }
-        }
       }
     }
   }
