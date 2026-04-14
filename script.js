@@ -163,23 +163,57 @@ function parseGrocery(text, fname) {
     date = `${d.padStart(2, '0')} ${MN[mi] || m} ${yr}`;
   }
 
-  // GSTIN
+  // GSTIN — Multi-tier detection for OCR resilience
   let gstin = '';
-  // Strict match
-  const gm = text.match(/GSTIN?\s*[:\s]*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z])/i);
-  if (gm) gstin = gm[1].toUpperCase();
-  else {
-    // OCR fuzzy match: sometimes misses 'GSTIN:' or misreads '0' as 'O', '1' as 'I'
-    const gmFuzzy = text.match(/([0-9O]{2}[A-Z]{5}[0-9O]{4}[A-Z][1-9A-ZOI]Z[0-9A-Z])/i);
-    if (gmFuzzy) {
-      // Fix common OCR errors in the extracted GSTIN string
-      gstin = gmFuzzy[1].toUpperCase()
-        .replace(/^([O])/, '0') // First char 0
-        .replace(/^(\d)([O])/, '$1'+'0'); // Second char 0
-      // Fix the 4 digits block
-      let pts = gstin.split('');
-      for(let i=7; i<=10; i++) if(pts[i]==='O' || pts[i]==='I' || pts[i]==='L') pts[i] = pts[i]==='O'?'0':'1';
-      gstin = pts.join('');
+  
+  // Tier 1: Strict match with GSTIN label
+  const gm1 = text.match(/GSTIN?\s*[:\s]*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z])/i);
+  if (gm1) { gstin = gm1[1].toUpperCase(); }
+  
+  // Tier 2: Match anywhere without label (standard GSTIN pattern)
+  if (!gstin) {
+    const gm2 = text.match(/\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z])\b/);
+    if (gm2) gstin = gm2[1].toUpperCase();
+  }
+  
+  // Tier 3: Fuzzy match — OCR may misread digits as letters
+  if (!gstin) {
+    const gm3 = text.match(/\b([0-9OoIl]{2}[A-Za-z]{5}[0-9OoIl]{4}[A-Za-z][0-9A-Za-zOoIl]Z[0-9A-Za-z])\b/i);
+    if (gm3) {
+      let g = gm3[1].toUpperCase();
+      // Fix OCR errors: positions 0-1 and 7-10 should be digits
+      let chars = g.split('');
+      [0,1,7,8,9,10].forEach(i => {
+        if (chars[i] === 'O') chars[i] = '0';
+        if (chars[i] === 'I' || chars[i] === 'L') chars[i] = '1';
+        if (chars[i] === 'S') chars[i] = '5';
+        if (chars[i] === 'B') chars[i] = '8';
+      });
+      gstin = chars.join('');
+    }
+  }
+  
+  // Tier 4: Line-by-line brute force — find any 15-char alphanumeric block
+  if (!gstin) {
+    for (const line of lines) {
+      // Look for 15 consecutive alphanumeric chars that could be GSTIN
+      const matches = line.match(/[0-9A-Za-z]{15}/g);
+      if (matches) {
+        for (const m of matches) {
+          // Validate: first 2 chars should be digits (state code), has Z at position 13
+          const upper = m.toUpperCase();
+          if (/^[0-9OIL]{2}[A-Z]{5}[0-9OIL]{4}[A-Z].Z./.test(upper)) {
+            let chars = upper.split('');
+            [0,1,7,8,9,10].forEach(i => {
+              if (chars[i] === 'O') chars[i] = '0';
+              if (chars[i] === 'I' || chars[i] === 'L') chars[i] = '1';
+            });
+            gstin = chars.join('');
+            break;
+          }
+        }
+      }
+      if (gstin) break;
     }
   }
 
@@ -1206,15 +1240,23 @@ function handleOCRFile(inp) {
   });
 });
 
-/* — Image preprocessing for better OCR — */
+/* — Advanced Image preprocessing for receipt OCR — */
 function preprocessForOCR(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      // Resize large images (phone cameras are 4000×3000+)
-      const MAX_DIM = 2400;
+      URL.revokeObjectURL(img.src);
       let w = img.width, h = img.height;
-      if (w > MAX_DIM || h > MAX_DIM) {
+
+      // Step 1: Upscale small images — Tesseract needs text to be at least ~30px tall
+      // Receipt text is often tiny; upscaling 2x dramatically improves accuracy
+      const MIN_DIM = 1800;
+      const MAX_DIM = 3200;
+      if (Math.max(w, h) < MIN_DIM) {
+        const scale = MIN_DIM / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      } else if (Math.max(w, h) > MAX_DIM) {
         const scale = MAX_DIM / Math.max(w, h);
         w = Math.round(w * scale);
         h = Math.round(h * scale);
@@ -1222,40 +1264,116 @@ function preprocessForOCR(file) {
 
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-
-      // Draw image
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, w, h);
 
-      // Enhance contrast for OCR (simple levels adjustment)
+      // Step 2: Convert to grayscale
       const imageData = ctx.getImageData(0, 0, w, h);
       const d = imageData.data;
+      const gray = new Uint8Array(w * h);
       for (let i = 0; i < d.length; i += 4) {
-        // Convert to grayscale
-        const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        // Increase contrast
-        let v = ((gray - 128) * 1.4) + 128;
-        v = Math.max(0, Math.min(255, v));
-        d[i] = d[i + 1] = d[i + 2] = v;
+        gray[i / 4] = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      }
+
+      // Step 3: Adaptive thresholding (local mean method)
+      // This handles uneven lighting on receipts (shadows, flash hotspots)
+      const blockSize = 25; // neighborhood size
+      const C = 12; // constant subtracted from mean
+      const binary = new Uint8Array(w * h);
+      
+      // Compute integral image for fast local mean
+      const integral = new Float64Array((w + 1) * (h + 1));
+      for (let y = 0; y < h; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < w; x++) {
+          rowSum += gray[y * w + x];
+          integral[(y + 1) * (w + 1) + (x + 1)] = rowSum + integral[y * (w + 1) + (x + 1)];
+        }
+      }
+
+      const half = Math.floor(blockSize / 2);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const x1 = Math.max(0, x - half);
+          const y1 = Math.max(0, y - half);
+          const x2 = Math.min(w - 1, x + half);
+          const y2 = Math.min(h - 1, y + half);
+          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+          const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                    - integral[y1 * (w + 1) + (x2 + 1)]
+                    - integral[(y2 + 1) * (w + 1) + x1]
+                    + integral[y1 * (w + 1) + x1];
+          const mean = sum / count;
+          binary[y * w + x] = gray[y * w + x] > (mean - C) ? 255 : 0;
+        }
+      }
+
+      // Step 4: Morphological cleaning — remove isolated noise dots
+      // Simple 3x3 median filter on the binary image
+      const cleaned = new Uint8Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          // Count white neighbors in 3x3
+          let whites = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (binary[(y + dy) * w + (x + dx)] > 0) whites++;
+            }
+          }
+          cleaned[y * w + x] = whites >= 5 ? 255 : 0; // majority vote
+        }
+      }
+
+      // Step 5: Write back to canvas
+      for (let i = 0; i < cleaned.length; i++) {
+        const v = cleaned[i];
+        d[i * 4] = v;
+        d[i * 4 + 1] = v;
+        d[i * 4 + 2] = v;
+        d[i * 4 + 3] = 255;
       }
       ctx.putImageData(imageData, 0, 0);
 
-      // Apply unsharp mask (simple sharpening)
-      // Re-read original, blur slightly, subtract
-      ctx.drawImage(img, 0, 0, w, h);
-      const orig = ctx.getImageData(0, 0, w, h);
-      // Apply the grayscale+contrast version
-      ctx.putImageData(imageData, 0, 0);
-
-      // Convert to high-quality JPEG blob
+      // Convert to high-quality PNG (lossless — important for OCR)
       canvas.toBlob(blob => {
         if (blob) resolve(blob);
         else reject(new Error('Canvas blob conversion failed'));
-      }, 'image/jpeg', 0.92);
+      }, 'image/png');
     };
     img.onerror = () => reject(new Error('Could not load image'));
     img.src = URL.createObjectURL(file);
   });
+}
+
+/* — Post-process OCR text to fix common Tesseract errors on receipts — */
+function cleanOCRText(rawText) {
+  let text = rawText;
+  
+  // Fix common character confusions in number contexts
+  // Replace isolated O/o with 0 when surrounded by digits
+  text = text.replace(/(\d)[Oo](\d)/g, '$1'+'0'+'$2');
+  text = text.replace(/(\d)[Oo]$/gm, '$1'+'0');
+  text = text.replace(/^[Oo](\d)/gm, '0$1');
+  
+  // Replace l/I with 1 when in number contexts
+  text = text.replace(/(\d)[lI](\d)/g, '$1'+'1'+'$2');
+  text = text.replace(/(\d)[lI]$/gm, '$1'+'1');
+  
+  // Fix S/$ appearing instead of 5 in numbers
+  text = text.replace(/(\d)[S$](\d)/g, '$1'+'5'+'$2');
+  
+  // Fix B appearing instead of 8 in numbers
+  text = text.replace(/(\d)B(\d)/g, '$1'+'8'+'$2');
+  
+  // Normalize whitespace: replace multiple spaces with single, but preserve line structure
+  text = text.replace(/[^\S\n]+/g, ' ');
+  
+  // Remove zero-width and special unicode characters
+  text = text.replace(/[\u200b\u200c\u200d\ufeff]/g, '');
+  
+  return text;
 }
 
 /* — Main OCR pipeline — */
@@ -1275,7 +1393,7 @@ async function processOCRImage(file) {
   document.getElementById('ocr-status').textContent = 'Preprocessing image…';
 
   try {
-    // Preprocess: resize, enhance contrast, convert to JPEG
+    // Preprocess: adaptive binarization, upscale, clean
     document.getElementById('ocr-status').textContent = 'Enhancing image for OCR…';
     document.getElementById('ocr-pbar').style.width = '10%';
     let ocrInput;
@@ -1289,12 +1407,13 @@ async function processOCRImage(file) {
     document.getElementById('ocr-status').textContent = 'Loading Tesseract.js engine…';
     document.getElementById('ocr-pbar').style.width = '15%';
 
+    // Run OCR with PSM 6 (uniform text block — best for receipts)
     const worker = await Tesseract.createWorker('eng', 1, {
       logger: m => {
         if (m.status === 'recognizing text') {
           const p = Math.round(m.progress * 100);
-          document.getElementById('ocr-pbar').style.width = Math.max(20, Math.round(20 + p * 0.75)) + '%';
-          document.getElementById('ocr-status').textContent = 'Recognizing text… ' + p + '%';
+          document.getElementById('ocr-pbar').style.width = Math.max(20, Math.round(20 + p * 0.35)) + '%';
+          document.getElementById('ocr-status').textContent = 'Pass 1: Recognizing text… ' + p + '%';
         } else if (m.status) {
           document.getElementById('ocr-status').textContent = m.status;
         }
@@ -1302,30 +1421,86 @@ async function processOCRImage(file) {
     });
 
     document.getElementById('ocr-pbar').style.width = '25%';
-    document.getElementById('ocr-status').textContent = 'Processing image…';
+    document.getElementById('ocr-status').textContent = 'Processing (pass 1 — block mode)…';
 
-    // Set PSM 6 (assume uniform block of text) — better for receipts
     await worker.setParameters({
       tessedit_pageseg_mode: '6',
       preserve_interword_spaces: '1',
     });
 
-    const { data } = await worker.recognize(ocrInput);
+    const result1 = await worker.recognize(ocrInput);
+    const text1 = result1.data.text;
+
+    // Pass 2: Try PSM 4 (column detection — handles multi-column receipts)
+    document.getElementById('ocr-status').textContent = 'Pass 2: Column detection…';
+    document.getElementById('ocr-pbar').style.width = '60%';
+
+    await worker.setParameters({
+      tessedit_pageseg_mode: '4',
+      preserve_interword_spaces: '1',
+    });
+    const result2 = await worker.recognize(ocrInput);
+    const text2 = result2.data.text;
+
+    // Pass 3: Also try with raw file (no preprocessing) to catch what binarization missed
+    document.getElementById('ocr-status').textContent = 'Pass 3: Raw image scan…';
+    document.getElementById('ocr-pbar').style.width = '80%';
+    
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '1',
+    });
+    const result3 = await worker.recognize(file);
+    const text3 = result3.data.text;
+
     await worker.terminate();
+
+    document.getElementById('ocr-pbar').style.width = '95%';
+    document.getElementById('ocr-status').textContent = 'Analyzing results…';
+
+    // Clean all results
+    const cleaned1 = cleanOCRText(text1);
+    const cleaned2 = cleanOCRText(text2);
+    const cleaned3 = cleanOCRText(text3);
+
+    // Parse all three and pick the best result
+    const parsed1 = parseGrocery(cleaned1, file.name || 'ocr_scan');
+    const parsed2 = parseGrocery(cleaned2, file.name || 'ocr_scan');
+    const parsed3 = parseGrocery(cleaned3, file.name || 'ocr_scan');
+
+    // Score each result: more items + GSTIN found = better
+    const score = p => p.items.length * 10 + (p.gstin ? 50 : 0) + (p.grandTotal > 0 ? 20 : 0);
+    let best = parsed1, bestText = cleaned1;
+    if (score(parsed2) > score(best)) { best = parsed2; bestText = cleaned2; }
+    if (score(parsed3) > score(best)) { best = parsed3; bestText = cleaned3; }
+
+    // If best didn't find GSTIN but another pass did, use that GSTIN
+    if (!best.gstin) {
+      if (parsed1.gstin) best.gstin = parsed1.gstin;
+      else if (parsed2.gstin) best.gstin = parsed2.gstin;
+      else if (parsed3.gstin) best.gstin = parsed3.gstin;
+    }
+    // Remove the "no GSTIN" flag if we found one from another pass
+    if (best.gstin) {
+      best.flags = best.flags.filter(f => !f.msg.includes('GSTIN'));
+    }
+
+    best.source = 'ocr';
 
     document.getElementById('ocr-pbar').style.width = '100%';
     document.getElementById('ocr-status').textContent = 'OCR complete!';
 
-    const rawText = data.text;
-    document.getElementById('ocr-raw-text').textContent = rawText;
-
-    // Parse the OCR text like a grocery bill
-    const parsed = parseGrocery(rawText, file.name || 'ocr_scan');
-    parsed.source = 'ocr';
+    // Show all 3 pass outputs in raw text for debugging
+    document.getElementById('ocr-raw-text').textContent = 
+      '=== PASS 1 (Block Mode - Preprocessed) ===\n' + cleaned1 +
+      '\n\n=== PASS 2 (Column Mode - Preprocessed) ===\n' + cleaned2 +
+      '\n\n=== PASS 3 (Block Mode - Raw Image) ===\n' + cleaned3 +
+      '\n\n=== BEST RESULT: Pass ' + (best === parsed1 ? '1' : best === parsed2 ? '2' : '3') +
+      ' (Score: ' + score(best) + ', Items: ' + best.items.length + ')';
 
     await sl(300);
     document.getElementById('ocr-processing').style.display = 'none';
-    showOCRResult(parsed);
+    showOCRResult(best);
 
   } catch (err) {
     console.error('OCR Error:', err);
