@@ -165,8 +165,23 @@ function parseGrocery(text, fname) {
 
   // GSTIN
   let gstin = '';
+  // Strict match
   const gm = text.match(/GSTIN?\s*[:\s]*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z])/i);
   if (gm) gstin = gm[1].toUpperCase();
+  else {
+    // OCR fuzzy match: sometimes misses 'GSTIN:' or misreads '0' as 'O', '1' as 'I'
+    const gmFuzzy = text.match(/([0-9O]{2}[A-Z]{5}[0-9O]{4}[A-Z][1-9A-ZOI]Z[0-9A-Z])/i);
+    if (gmFuzzy) {
+      // Fix common OCR errors in the extracted GSTIN string
+      gstin = gmFuzzy[1].toUpperCase()
+        .replace(/^([O])/, '0') // First char 0
+        .replace(/^(\d)([O])/, '$1'+'0'); // Second char 0
+      // Fix the 4 digits block
+      let pts = gstin.split('');
+      for(let i=7; i<=10; i++) if(pts[i]==='O' || pts[i]==='I' || pts[i]==='L') pts[i] = pts[i]==='O'?'0':'1';
+      gstin = pts.join('');
+    }
+  }
 
   const items = extractItems(lines);
 
@@ -315,6 +330,53 @@ function extractItems(lines) {
         const amt = parseFloat(m[2].replace(/,/g, ''));
         if (amt > 0.5 && amt < 200000 && name.length >= 3 && /[a-zA-Z]{3}/.test(name))
           add(name, 1, amt, amt, gstFor(name), amt);
+      }
+    }
+  }
+
+  // Strategy 5: OCR Fuzzy Fallback
+  // Handles messy Tesseract output by looking for a text blob followed by 2 to 6 numbers separated by spaces
+  if (items.length < 2) {
+    for (const line of lines) {
+      if (isSkip(line)) continue;
+      
+      // Clean up common OCR noise (O->0, l/I->1, comma->dot) exclusively in the trailing number block
+      let cleanLine = line.replace(/\s+([0-9OoIl\.\,\s]+)$/, (match, p1) => {
+        return ' ' + p1.replace(/[Oo]/g, '0').replace(/[Il]/g, '1').replace(/,/g, '.');
+      });
+
+      // Match: Item Name [Space] List of Numbers
+      const m = cleanLine.match(/^([a-zA-Z\s\&\-\%\d]{4,55}?)\s+([\d\.\s]+)$/);
+      if (m) {
+        const name = m[1].replace(/^\d+[\.\)]\s*/, '').trim();
+        if(!/[a-zA-Z]{3}/.test(name)) continue; // Must have some letters
+        
+        // Split numbers, discard empty
+        const nums = m[2].trim().split(/\s+/).map(x => parseFloat(x)).filter(x => !isNaN(x) && x > 0);
+        
+        if (nums.length >= 2 && nums.length <= 6) {
+           let qty = nums[0]; // first number is usually qty
+           let total = nums[nums.length - 1]; // last is usually total amount
+           
+           // If OCR merged Qty and Rate (e.g. "124.50" instead of "1 24.50"), try to salvage
+           if (qty > 100 && nums.length === 2) {
+             total = nums[1]; qty = 1;
+           }
+           
+           let rate = nums.length > 2 ? nums[nums.length - 2] : (total / qty);
+           
+           // Sanity check: is qty a reasonable integer (or small decimal) and does rate roughly match?
+           if (qty <= 500 && total >= 1) {
+             let error = Math.abs(total - (qty * rate));
+             // If rate and total perfectly match, set rate
+             if (error < 5 || nums.length === 2) {
+                add(name, qty, rate, rate, gstFor(name), total);
+             } else if (nums.length >= 3) {
+                // Sometime MRP is in between: Qty MRP Amount -> Rate = Amount/Qty
+                add(name, qty, nums[1], total/qty, gstFor(name), total);
+             }
+           }
+        }
       }
     }
   }
