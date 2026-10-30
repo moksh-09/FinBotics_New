@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FinBotics — Local Bill OCR, GST Parser & TallyPrime Automation</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f8f5ef;
+  --surface:#ffffff;
+  --primary:#1e4d35;
+  --primary-light:#2d6a4f;
+  --primary-glow:rgba(30,77,53,0.12);
+  --excel-green:#107c41;
+  --excel-light:rgba(16,124,65,0.08);
+  --tally-blue:#005a9e;
+  --tally-light:rgba(0,90,158,0.08);
+  --gold:#c9a84c;
+  --gold-light:rgba(201,168,76,0.14);
+  --text:#0f1c16;
+  --text-sec:#45564b;
+  --text-muted:#7e9284;
+  --border:rgba(0,0,0,0.08);
+  --grid-line:rgba(0,0,0,0.06);
+  --cell-bg:#fdfcf9;
+}
+
+html,body{height:100%;overflow-x:hidden}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  line-height:1.6;
+  position:relative;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BACKGROUND ANIMATION: SPREADSHEET & TALLY LEDGER GRID
+   ══════════════════════════════════════════════════════════════ */
+.sheet-bg-canvas{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  pointer-events:none;
+  z-index:0;
+  overflow:hidden;
+  opacity:0.62;
+  mask-image:radial-gradient(ellipse 90% 75% at 50% 35%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.3) 65%, transparent 100%);
+  -webkit-mask-image:radial-gradient(ellipse 90% 75% at 50% 35%, rgba(0,0,0,0.85) 15%, rgba(0,0,0,0.3) 65%, transparent 100%);
+}
+
+.sheet-track{
+  position:absolute;
+  width:160%;
+  left:-30%;
+  top:-20%;
+  transform:rotate(-4deg);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  will-change:transform;
+}
+
+/* Individual spreadsheet row mockups */
+.sheet-row-table{
+  width:100%;
+  border-collapse:collapse;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;
+  background:var(--surface);
+  box-shadow:0 1px 3px rgba(0,0,0,0.03);
+  border:1px solid var(--grid-line);
+  white-space:nowrap;
+  user-select:none;
+}
+.sheet-row-table th{
+  background:#f2ede3;
+  color:var(--text-muted);
+  font-weight:600;
+  font-size:9.5px;
+  padding:6px 12px;
+  border:1px solid var(--grid-line);
+  text-align:left;
+  letter-spacing:0.04em;
+}
+.sheet-row-table td{
+  padding:7px 12px;
+  border:1px solid var(--grid-line);
+  color:var(--text-sec);
+  background:var(--surface);
+}
+.sheet-row-table tr:nth-child(even) td{
+  background:#fbf9f4;
+}
+.sheet-row-table td.cell-active{
+  background:rgba(30,77,53,0.06);
+  outline:1.5px solid var(--primary);
+  color:var(--primary);
+  font-weight:600;
+}
+.sheet-row-table td.cell-formula{
+  color:var(--excel-green);
+  font-weight:600;
+}
+.sheet-row-table td.cell-gst{
+  color:var(--tally-blue);
+  font-weight:600;
+}
+
+/* Continuous infinite scroll ticker */
+.scroll-stream-left{
+  display:flex;
+  animation:marqueeLeft 55s linear infinite;
+}
+.scroll-stream-right{
+  display:flex;
+  animation:marqueeRight 65s linear infinite;
+}
+@keyframes marqueeLeft{
+  0%{transform:translateX(0)}
+  100%{transform:translateX(-50%)}
+}
+@keyframes marqueeRight{
+  0%{transform:translateX(-50%)}
+  100%{transform:translateX(0)}
+}
+
+/* Subtle Excel sheet watermark grid lines */
+.bg-excel-lines{
+  position:fixed;
+  inset:0;
+  background-size:28px 28px;
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,0.025) 1px, transparent 1px);
+  pointer-events:none;
+  z-index:0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   NAVIGATION
+   ══════════════════════════════════════════════════════════════ */
+nav{
+  position:fixed;
+  top:0;left:0;right:0;
+  z-index:100;
+  padding:16px 48px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  background:rgba(248,245,239,0.92);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(0,0,0,0.06);
+}
+.nav-brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  text-decoration:none;
+}
+.nav-logo-badge{
+  width:36px;height:36px;
+  border-radius:8px;
+  background:var(--primary);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:'Cormorant Garamond',serif;
+  font-style:italic;
+  font-size:22px;
+  color:#fff;
+  font-weight:700;
+  box-shadow:0 2px 8px rgba(30,77,53,0.25);
+}
+.nav-brand-title{
+  font-family:'Cormorant Garamond',serif;
+  font-size:22px;
+  font-weight:700;
+  color:var(--text);
+  letter-spacing:-0.02em;
+  line-height:1;
+}
+.nav-brand-tag{
+  font-size:10px;
+  color:var(--text-muted);
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  display:block;
+  margin-top:2px;
+}
+.nav-menu{
+  display:flex;
+  align-items:center;
+  gap:28px;
+}
+.nav-menu a{
+  font-size:13px;
+  font-weight:500;
+  color:var(--text-sec);
+  text-decoration:none;
+  transition:color .2s;
+}
+.nav-menu a:hover{color:var(--primary)}
+.nav-auth-btn{
+  background:var(--primary);
+  color:#fff;
+  padding:9px 20px;
+  border-radius:6px;
+  font-size:13px;
+  font-weight:600;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  transition:all .2s;
+}
+.nav-auth-btn:hover{
+  background:var(--primary-light);
+  transform:translateY(-1px);
+  box-shadow:0 4px 14px rgba(30,77,53,0.2);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HERO SECTION
+   ══════════════════════════════════════════════════════════════ */
+.hero{
+  position:relative;
+  z-index:10;
+  padding:140px 24px 70px;
+  max-width:1160px;
+  margin:0 auto;
+  text-align:center;
+}
+.hero-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:5px 14px;
+  border-radius:99px;
+  background:rgba(30,77,53,0.08);
+  border:1px solid rgba(30,77,53,0.18);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:var(--primary);
+  margin-bottom:24px;
+}
+.hero-pill-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:var(--primary);
+  box-shadow:0 0 6px var(--primary);
+  animation:pulseDot 2s infinite ease-in-out;
+}
+@keyframes pulseDot{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.4;transform:scale(0.8)}
+}
+.hero-title{
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(44px,6vw,78px);
+  font-weight:700;
+  line-height:1.06;
+  letter-spacing:-0.03em;
+  color:var(--text);
+  margin-bottom:22px;
+}
+.hero-title em{
+  font-style:italic;
+  color:var(--primary);
+  font-weight:600;
+}
+.hero-desc{
+  font-size:16.5px;
+  font-weight:400;
+  color:var(--text-sec);
+  line-height:1.75;
+  max-width:680px;
+  margin:0 auto 24px;
+}
+.privacy-pitch-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  background:rgba(30,77,53,0.06);
+  border:1px solid rgba(30,77,53,0.18);
+  border-radius:10px;
+  padding:9px 16px;
+  margin:0 auto 30px;
+  font-size:13px;
+  color:var(--text);
+  max-width:720px;
+  text-align:left;
+  line-height:1.5;
+}
+.privacy-pitch-badge strong{color:var(--primary)}
+.hero-cta-group{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-bottom:44px;
+}
+.btn-main{
+  background:var(--primary);
+  color:#fff;
+  padding:14px 32px;
+  border-radius:7px;
+  font-size:14.5px;
+  font-weight:600;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  transition:all .2s;
+  box-shadow:0 4px 16px rgba(30,77,53,0.22);
+}
+.btn-main:hover{
+  background:var(--primary-light);
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(30,77,53,0.3);
+}
+.btn-ghost-sec{
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--border);
+  padding:14px 28px;
+  border-radius:7px;
+  font-size:14.5px;
+  font-weight:500;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  transition:all .2s;
+}
+.btn-ghost-sec:hover{
+  border-color:var(--primary);
+  color:var(--primary);
+  background:#fcfbf8;
+}
+
+/* Feature tags strip */
+.hero-chips{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:20px;
+  flex-wrap:wrap;
+  font-size:12px;
+  color:var(--text-muted);
+}
+.hero-chip{
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.hero-chip i{color:var(--primary)}
+
+/* ══════════════════════════════════════════════════════════════
+   AUTHENTIC SPREADSHEET AUDIT DESK SHOWCASE (HERO MOCKUP)
+   ══════════════════════════════════════════════════════════════ */
+.sheet-showcase{
+  position:relative;
+  z-index:10;
+  max-width:1120px;
+  margin:20px auto 90px;
+  padding:0 20px;
+}
+.sheet-window{
+  background:var(--surface);
+  border:1px solid rgba(0,0,0,0.12);
+  border-radius:12px;
+  box-shadow:0 24px 60px rgba(15,28,22,0.12),0 4px 16px rgba(0,0,0,0.04);
+  overflow:hidden;
+}
+
+/* Excel-like Ribbon Bar */
+.sheet-ribbon{
+  background:#107c41;
+  color:#fff;
+  padding:9px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:12px;
+  font-weight:500;
+}
+.sheet-ribbon-left{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.sheet-ribbon-tabs{
+  display:flex;
+  gap:16px;
+  font-size:11.5px;
+  opacity:0.9;
+}
+.sheet-ribbon-tab.active{
+  font-weight:700;
+  border-bottom:2px solid #fff;
+  padding-bottom:1px;
+}
+
+/* Excel formula bar */
+.sheet-formula-bar{
+  background:#f8f9fa;
+  border-bottom:1px solid rgba(0,0,0,0.08);
+  padding:6px 16px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11.5px;
+}
+.formula-name-box{
+  background:#fff;
+  border:1px solid #d0d7de;
+  border-radius:4px;
+  padding:2px 8px;
+  color:var(--text-sec);
+  font-weight:600;
+}
+.formula-fx{
+  color:var(--text-muted);
+  font-weight:700;
+  font-style:italic;
+}
+.formula-expr{
+  color:#0969da;
+  flex:1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* Interactive Table body */
+.sheet-content-table{
+  width:100%;
+  border-collapse:collapse;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11.5px;
+}
+.sheet-content-table th{
+  background:#f3f0e8;
+  color:var(--text-sec);
+  font-weight:600;
+  font-size:10.5px;
+  padding:8px 12px;
+  border:1px solid #e1ded6;
+  text-align:left;
+  letter-spacing:0.02em;
+}
+.sheet-content-table td{
+  padding:9px 12px;
+  border:1px solid #e9e6df;
+  color:var(--text);
+  background:var(--surface);
+}
+.sheet-content-table tr:hover td{
+  background:rgba(30,77,53,0.035);
+}
+.sheet-content-table td.col-right{text-align:right}
+.badge-itc{
+  background:rgba(16,124,65,0.12);
+  color:#107c41;
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:4px;
+  font-weight:700;
+}
+.badge-tally{
+  background:rgba(0,90,158,0.1);
+  color:#005a9e;
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:4px;
+  font-weight:700;
+}
+
+/* Bottom Sheet tabs */
+.sheet-footer-tabs{
+  background:#f0ede5;
+  border-top:1px solid #ddd9d0;
+  padding:6px 14px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:11.5px;
+  font-weight:500;
+  color:var(--text-sec);
+}
+.sheet-tab-pill{
+  background:#fff;
+  border:1px solid #d4cfc5;
+  border-radius:4px 4px 0 0;
+  padding:4px 12px;
+  font-weight:600;
+  color:var(--primary);
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE SECTIONS (GROUNDED & DIRECT)
+   ══════════════════════════════════════════════════════════════ */
+.section{
+  position:relative;
+  z-index:10;
+  padding:80px 24px;
+  max-width:1160px;
+  margin:0 auto;
+}
+.section-header{
+  text-align:center;
+  max-width:680px;
+  margin:0 auto 50px;
+}
+.section-tag{
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:0.16em;
+  text-transform:uppercase;
+  color:var(--primary);
+  margin-bottom:10px;
+  display:inline-block;
+}
+.section-heading{
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(32px,4vw,50px);
+  font-weight:700;
+  line-height:1.15;
+  color:var(--text);
+  letter-spacing:-0.02em;
+  margin-bottom:14px;
+}
+.section-desc{
+  font-size:15px;
+  color:var(--text-sec);
+  line-height:1.7;
+}
+
+/* 3-Card Grid */
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:24px;
+}
+.feature-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:32px 28px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.03);
+  transition:all .25s ease;
+}
+.feature-card:hover{
+  transform:translateY(-4px);
+  box-shadow:0 12px 30px rgba(0,0,0,0.07);
+  border-color:rgba(30,77,53,0.2);
+}
+.feature-card-icon{
+  width:46px;height:46px;
+  border-radius:10px;
+  background:var(--primary-glow);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:20px;
+  color:var(--primary);
+  margin-bottom:20px;
+}
+.feature-card-title{
+  font-family:'Cormorant Garamond',serif;
+  font-size:22px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:10px;
+  letter-spacing:-0.01em;
+}
+.feature-card-desc{
+  font-size:13.5px;
+  color:var(--text-sec);
+  line-height:1.68;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HOW IT WORKS STEPPER
+   ══════════════════════════════════════════════════════════════ */
+.pipeline-box{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:36px;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:24px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.04);
+}
+.step-item{
+  position:relative;
+}
+.step-item:not(:last-child)::after{
+  content:'→';
+  position:absolute;
+  right:-16px;
+  top:22px;
+  color:var(--text-muted);
+  font-size:20px;
+}
+.step-num{
+  font-family:'JetBrains Mono',monospace;
+  font-size:12px;
+  font-weight:700;
+  color:var(--primary);
+  background:rgba(30,77,53,0.1);
+  width:28px;height:28px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-bottom:14px;
+}
+.step-head{
+  font-size:15px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:6px;
+}
+.step-detail{
+  font-size:12.5px;
+  color:var(--text-sec);
+  line-height:1.6;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COMPARISON TABLE: FINBOTICS VS GENERIC CLOUD OCR
+   ══════════════════════════════════════════════════════════════ */
+.comparison-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 4px 20px rgba(0,0,0,0.04);
+}
+.comparison-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+.comparison-table th{
+  padding:14px 20px;
+  background:#f4f1e8;
+  font-weight:600;
+  text-align:left;
+  border-bottom:1px solid var(--border);
+}
+.comparison-table td{
+  padding:14px 20px;
+  border-bottom:1px solid var(--border);
+}
+.comparison-table tr:last-child td{border-bottom:none}
+.comparison-table tr:hover td{background:#fdfcf9}
+.check-yes{color:#1e4d35;font-weight:600}
+.check-no{color:#c0392b;font-weight:500}
+
+/* ══════════════════════════════════════════════════════════════
+   BOTTOM CTA
+   ══════════════════════════════════════════════════════════════ */
+.bottom-cta{
+  background:linear-gradient(135deg,#133323 0%,#1e4d35 100%);
+  color:#fff;
+  border-radius:16px;
+  padding:60px 40px;
+  text-align:center;
+  margin:40px auto 80px;
+  max-width:1120px;
+  box-shadow:0 16px 40px rgba(19,51,35,0.2);
+}
+.bottom-cta h2{
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(34px,5vw,52px);
+  font-weight:700;
+  line-height:1.15;
+  margin-bottom:14px;
+}
+.bottom-cta p{
+  font-size:16px;
+  color:rgba(255,255,255,0.8);
+  max-width:540px;
+  margin:0 auto 30px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FOOTER
+   ══════════════════════════════════════════════════════════════ */
+footer{
+  border-top:1px solid var(--border);
+  padding:32px 48px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:12.5px;
+  color:var(--text-muted);
+  background:var(--surface);
+}
+footer a{color:var(--text-sec);text-decoration:none}
+footer a:hover{color:var(--primary)}
+
+@media(max-width:880px){
+  nav{padding:14px 20px}
+  .nav-menu{display:none}
+  .features-grid{grid-template-columns:1fr}
+  .pipeline-box{grid-template-columns:1fr 1fr;gap:20px}
+  .step-item:not(:last-child)::after{display:none}
+  .sheet-showcase{overflow-x:auto}
+  .sheet-window{min-width:680px}
+  footer{flex-direction:column;gap:14px;text-align:center}
+}
+@media(max-width:540px){
+  .pipeline-box{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     ANIMATED SPREADSHEET / TALLY LEDGER BACKGROUND
+     ══════════════════════════════════════════════════════════════ -->
+<div class="bg-excel-lines"></div>
+
+<div class="sheet-bg-canvas" id="sheet-bg">
+  <div class="sheet-track" id="sheet-track">
+
+    <!-- Row 1 Ticker (Scrolls Left) -->
+    <div class="scroll-stream-left">
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>01</td><td>VCH/2026/089</td><td>20-Dec-2026</td><td>Surabhi Hardwares, Blr</td><td>29AACCT3705E000</td><td>1005</td><td>7 No</td><td>₹500.00</td><td>₹3,500.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹315.00</td><td class="cell-gst">₹315.00</td><td class="cell-active">₹4,130.00</td><td>Hardware Purchase</td><td>ITC_VERIFIED</td>
+            <td>02</td><td>BB-2026-7823</td><td>09-Nov-2026</td><td>BigBasket Wholesale</td><td>27AAACB1234F1ZK</td><td>1901</td><td>2 Pk</td><td>₹25.00</td><td>₹50.00</td><td class="cell-formula">0%</td><td class="cell-gst">₹0.00</td><td class="cell-gst">₹0.00</td><td class="cell-active">₹50.00</td><td>Staples &amp; Groceries</td><td>MATCHED</td>
+            <td>03</td><td>DM-MUM-4412</td><td>11-Nov-2026</td><td>D-Mart Avenue Supermarts</td><td>27AABCA5566K1ZN</td><td>2106</td><td>4 L</td><td>₹68.00</td><td>₹272.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹6.80</td><td class="cell-gst">₹6.80</td><td class="cell-active">₹272.00</td><td>Dairy Products</td><td>ITC_VERIFIED</td>
+            <td>04</td><td>BK-DEL-9843</td><td>14-Nov-2026</td><td>Blinkit Retail Network</td><td>07AAGCB9988D1ZP</td><td>3306</td><td>1 No</td><td>₹220.00</td><td>₹220.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹19.80</td><td class="cell-gst">₹19.80</td><td class="cell-active">₹220.00</td><td>Cleaning Supplies</td><td>MATCHED</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>01</td><td>VCH/2026/089</td><td>20-Dec-2026</td><td>Surabhi Hardwares, Blr</td><td>29AACCT3705E000</td><td>1005</td><td>7 No</td><td>₹500.00</td><td>₹3,500.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹315.00</td><td class="cell-gst">₹315.00</td><td class="cell-active">₹4,130.00</td><td>Hardware Purchase</td><td>ITC_VERIFIED</td>
+            <td>02</td><td>BB-2026-7823</td><td>09-Nov-2026</td><td>BigBasket Wholesale</td><td>27AAACB1234F1ZK</td><td>1901</td><td>2 Pk</td><td>₹25.00</td><td>₹50.00</td><td class="cell-formula">0%</td><td class="cell-gst">₹0.00</td><td class="cell-gst">₹0.00</td><td class="cell-active">₹50.00</td><td>Staples &amp; Groceries</td><td>MATCHED</td>
+            <td>03</td><td>DM-MUM-4412</td><td>11-Nov-2026</td><td>D-Mart Avenue Supermarts</td><td>27AABCA5566K1ZN</td><td>2106</td><td>4 L</td><td>₹68.00</td><td>₹272.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹6.80</td><td class="cell-gst">₹6.80</td><td class="cell-active">₹272.00</td><td>Dairy Products</td><td>ITC_VERIFIED</td>
+            <td>04</td><td>BK-DEL-9843</td><td>14-Nov-2026</td><td>Blinkit Retail Network</td><td>07AAGCB9988D1ZP</td><td>3306</td><td>1 No</td><td>₹220.00</td><td>₹220.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹19.80</td><td class="cell-gst">₹19.80</td><td class="cell-active">₹220.00</td><td>Cleaning Supplies</td><td>MATCHED</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Row 2 Ticker (Scrolls Right) -->
+    <div class="scroll-stream-right">
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>05</td><td>ZP-BLR-5541</td><td>15-Nov-2026</td><td>Zepto Quick Delivery</td><td>29AAFCZ1122E1Z4</td><td>1905</td><td>3 Pk</td><td>₹20.00</td><td>₹60.00</td><td class="cell-formula">12%</td><td class="cell-gst">₹3.60</td><td class="cell-gst">₹3.60</td><td class="cell-active">₹60.00</td><td>Snacks &amp; Biscuits</td><td>MATCHED</td>
+            <td>06</td><td>CM-2026-081</td><td>12-Aug-2026</td><td>City Mart Super Store</td><td>24AABCC1122D1Z0</td><td>8471</td><td>1 Set</td><td>₹1,120.00</td><td>₹1,120.00</td><td class="cell-formula">12%</td><td class="cell-gst">₹67.20</td><td class="cell-gst">₹67.20</td><td class="cell-active">₹1,254.40</td><td>Commercial Goods</td><td>ITC_VERIFIED</td>
+            <td>07</td><td>FB-2026-441</td><td>14-Aug-2026</td><td>Fresh Basket Hypermarket</td><td>27AABCF9988K1Z5</td><td>0902</td><td>2 Pk</td><td>₹162.00</td><td>₹324.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹8.10</td><td class="cell-gst">₹8.10</td><td class="cell-active">₹324.00</td><td>Cooking Oil</td><td>MATCHED</td>
+            <td>08</td><td>RL-2026-102</td><td>18-Nov-2026</td><td>Reliance Retail Ltd</td><td>27AAAAR1234A1Z9</td><td>3401</td><td>2 No</td><td>₹240.00</td><td>₹480.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹43.20</td><td class="cell-gst">₹43.20</td><td class="cell-active">₹480.00</td><td>Personal Care</td><td>ITC_VERIFIED</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>05</td><td>ZP-BLR-5541</td><td>15-Nov-2026</td><td>Zepto Quick Delivery</td><td>29AAFCZ1122E1Z4</td><td>1905</td><td>3 Pk</td><td>₹20.00</td><td>₹60.00</td><td class="cell-formula">12%</td><td class="cell-gst">₹3.60</td><td class="cell-gst">₹3.60</td><td class="cell-active">₹60.00</td><td>Snacks &amp; Biscuits</td><td>MATCHED</td>
+            <td>06</td><td>CM-2026-081</td><td>12-Aug-2026</td><td>City Mart Super Store</td><td>24AABCC1122D1Z0</td><td>8471</td><td>1 Set</td><td>₹1,120.00</td><td>₹1,120.00</td><td class="cell-formula">12%</td><td class="cell-gst">₹67.20</td><td class="cell-gst">₹67.20</td><td class="cell-active">₹1,254.40</td><td>Commercial Goods</td><td>ITC_VERIFIED</td>
+            <td>07</td><td>FB-2026-441</td><td>14-Aug-2026</td><td>Fresh Basket Hypermarket</td><td>27AABCF9988K1Z5</td><td>0902</td><td>2 Pk</td><td>₹162.00</td><td>₹324.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹8.10</td><td class="cell-gst">₹8.10</td><td class="cell-active">₹324.00</td><td>Cooking Oil</td><td>MATCHED</td>
+            <td>08</td><td>RL-2026-102</td><td>18-Nov-2026</td><td>Reliance Retail Ltd</td><td>27AAAAR1234A1Z9</td><td>3401</td><td>2 No</td><td>₹240.00</td><td>₹480.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹43.20</td><td class="cell-gst">₹43.20</td><td class="cell-active">₹480.00</td><td>Personal Care</td><td>ITC_VERIFIED</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Row 3 Ticker (Scrolls Left) -->
+    <div class="scroll-stream-left">
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>09</td><td>AMZ-2026-99</td><td>02-Oct-2026</td><td>Amazon Seller Services</td><td>29AABCA0011B1Z2</td><td>4820</td><td>10 No</td><td>₹85.00</td><td>₹850.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹76.50</td><td class="cell-gst">₹76.50</td><td class="cell-active">₹1,003.00</td><td>Office Stationery</td><td>ITC_VERIFIED</td>
+            <td>10</td><td>TALLY-IMP-01</td><td>28-Dec-2026</td><td>Karnataka Supplies Co</td><td>29AABCK5544E1Z3</td><td>7318</td><td>50 No</td><td>₹12.00</td><td>₹600.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹54.00</td><td class="cell-gst">₹54.00</td><td class="cell-active">₹708.00</td><td>Machine Fasteners</td><td>MATCHED</td>
+            <td>11</td><td>NG-2026-7721</td><td>16-Aug-2026</td><td>Neighborhood Grocers</td><td>27AABCN8877K1Z4</td><td>2105</td><td>2 Pk</td><td>₹150.00</td><td>₹300.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹7.50</td><td class="cell-gst">₹7.50</td><td class="cell-active">₹300.00</td><td>Provisions &amp; Spices</td><td>MATCHED</td>
+            <td>12</td><td>TALLY-EXP-08</td><td>30-Dec-2026</td><td>Direct VCH Entry Prime</td><td>29AACCT3705E000</td><td>1005</td><td>7 No</td><td>₹500.00</td><td>₹3,500.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹315.00</td><td class="cell-gst">₹315.00</td><td class="cell-active">₹4,130.00</td><td>Purchase Voucher</td><td>POSTED_TALLY</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="sheet-row-table">
+        <tbody>
+          <tr>
+            <td>09</td><td>AMZ-2026-99</td><td>02-Oct-2026</td><td>Amazon Seller Services</td><td>29AABCA0011B1Z2</td><td>4820</td><td>10 No</td><td>₹85.00</td><td>₹850.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹76.50</td><td class="cell-gst">₹76.50</td><td class="cell-active">₹1,003.00</td><td>Office Stationery</td><td>ITC_VERIFIED</td>
+            <td>10</td><td>TALLY-IMP-01</td><td>28-Dec-2026</td><td>Karnataka Supplies Co</td><td>29AABCK5544E1Z3</td><td>7318</td><td>50 No</td><td>₹12.00</td><td>₹600.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹54.00</td><td class="cell-gst">₹54.00</td><td class="cell-active">₹708.00</td><td>Machine Fasteners</td><td>MATCHED</td>
+            <td>11</td><td>NG-2026-7721</td><td>16-Aug-2026</td><td>Neighborhood Grocers</td><td>27AABCN8877K1Z4</td><td>2105</td><td>2 Pk</td><td>₹150.00</td><td>₹300.00</td><td class="cell-formula">5%</td><td class="cell-gst">₹7.50</td><td class="cell-gst">₹7.50</td><td class="cell-active">₹300.00</td><td>Provisions &amp; Spices</td><td>MATCHED</td>
+            <td>12</td><td>TALLY-EXP-08</td><td>30-Dec-2026</td><td>Direct VCH Entry Prime</td><td>29AACCT3705E000</td><td>1005</td><td>7 No</td><td>₹500.00</td><td>₹3,500.00</td><td class="cell-formula">18%</td><td class="cell-gst">₹315.00</td><td class="cell-gst">₹315.00</td><td class="cell-active">₹4,130.00</td><td>Purchase Voucher</td><td>POSTED_TALLY</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     TOP NAVIGATION
+     ══════════════════════════════════════════════════════════════ -->
+<nav>
+  <a href="/landing" class="nav-brand">
+    <div class="nav-logo-badge">Ƒ</div>
+    <div>
+      <div class="nav-brand-title">FinBotics</div>
+      <span class="nav-brand-tag">Accounting Automation</span>
+    </div>
+  </a>
+
+  <div class="nav-menu">
+    <a href="#how-it-works">How It Works</a>
+    <a href="#features">Capabilities</a>
+    <a href="#tally-excel">Tally &amp; Excel</a>
+    <a href="#comparison">Cloud vs Local</a>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/app" class="btn-ghost-sec" style="padding:8px 16px;font-size:13px">Live Demo</a>
+    <a href="/auth" class="nav-auth-btn">Open App <i class="fas fa-arrow-right"></i></a>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════
+     HERO CONTENT
+     ══════════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-pill">
+    <span class="hero-pill-dot"></span>
+    <span>Local OCR Engine · No Cloud Exposure · Indian GST</span>
+  </div>
+
+  <h1 class="hero-title">
+    Drop any bill. Get clean<br>
+    <em>Excel &amp; Tally entries</em> in seconds.
+  </h1>
+
+  <p class="hero-desc">
+    FinBotics turns grocery receipts, paper invoices, and digital PDFs into reconciled ledger entries. 
+    It reads multi-column tables, classifies Indian GST slabs, and exports directly to <strong>TallyPrime XML</strong> and <strong>Excel (.xlsx)</strong>—all running locally on your computer.
+  </p>
+
+  <div class="privacy-pitch-badge">
+    <i class="fas fa-shield-halved" style="color:var(--primary);font-size:15px;flex-shrink:0"></i>
+    <span><strong>Your Books Stay on Your Machine:</strong> 100% on-device processing. Zero cloud uploads, zero third-party AI data exposure, and complete confidentiality for all business invoices.</span>
+  </div>
+
+  <div class="hero-cta-group">
+    <a href="/app" class="btn-main">
+      <i class="fas fa-file-invoice"></i> Launch Bill Scanner
+    </a>
+    <a href="/auth" class="btn-ghost-sec">
+      <i class="fas fa-user-lock"></i> Sign In / Demo Portal
+    </a>
+  </div>
+
+  <div class="hero-chips">
+    <div class="hero-chip"><i class="fas fa-shield-halved"></i> 100% On-Device Privacy</div>
+    <div class="hero-chip"><i class="fas fa-bolt"></i> &lt; 30ms Digital PDF Parsing</div>
+    <div class="hero-chip"><i class="fas fa-percent"></i> 6 GST Slabs Auto-Calculated</div>
+    <div class="hero-chip"><i class="fas fa-file-excel"></i> Ready for TallyPrime &amp; Excel</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SPREADSHEET SHOWCASE: LIVE AUDIT DESK PREVIEW
+     ══════════════════════════════════════════════════════════════ -->
+<div class="sheet-showcase" id="tally-excel">
+  <div class="sheet-window">
+
+    <!-- Excel Ribbon Top -->
+    <div class="sheet-ribbon">
+      <div class="sheet-ribbon-left">
+        <i class="fas fa-file-excel fa-lg"></i>
+        <span>FinBotics_Automated_Audit_Master_2026.xlsx — Excel</span>
+      </div>
+      <div class="sheet-ribbon-tabs">
+        <span class="sheet-ribbon-tab active">Home</span>
+        <span class="sheet-ribbon-tab">GST Audit</span>
+        <span class="sheet-ribbon-tab">Tally XML Export</span>
+        <span class="sheet-ribbon-tab">Ledger Mapping</span>
+      </div>
+    </div>
+
+    <!-- Formula Bar -->
+    <div class="sheet-formula-bar">
+      <div class="formula-name-box">I4</div>
+      <div class="formula-fx">fx</div>
+      <div class="formula-expr">=IF(GST_RATE=18%, (TAXABLE_VAL * 0.18), "CHECK_SLAB") &nbsp;·&nbsp; [VOUCHER VERIFIED: Surabhi Hardwares, Bill SHB/456/20]</div>
+    </div>
+
+    <!-- Real Ledger Rows -->
+    <div style="overflow-x:auto">
+      <table class="sheet-content-table">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>VOUCHER NO</th>
+            <th>DATE</th>
+            <th>VENDOR / STORE</th>
+            <th>GSTIN</th>
+            <th>ITEM DESCRIPTION</th>
+            <th>QTY</th>
+            <th class="col-right">RATE (₹)</th>
+            <th class="col-right">TAXABLE (₹)</th>
+            <th>GST%</th>
+            <th class="col-right">CGST</th>
+            <th class="col-right">SGST</th>
+            <th class="col-right">TOTAL (₹)</th>
+            <th>STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td><strong>SHB/456/20</strong></td>
+            <td>20-Dec-2026</td>
+            <td>Surabhi Hardwares, Bangalore</td>
+            <td><span style="color:#0969da;font-weight:600">29AACCT3705E000</span></td>
+            <td>12MM* TMT Rods (HSN: 1005)</td>
+            <td>7.0 No</td>
+            <td class="col-right">₹500.00</td>
+            <td class="col-right">₹3,500.00</td>
+            <td><span style="color:#b06000;font-weight:700">18%</span></td>
+            <td class="col-right">₹315.00</td>
+            <td class="col-right">₹315.00</td>
+            <td class="col-right" style="color:#107c41;font-weight:700">₹4,130.00</td>
+            <td><span class="badge-itc">ITC VERIFIED</span></td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td><strong>BB-20261109</strong></td>
+            <td>09-Nov-2026</td>
+            <td>BigBasket Wholesale Supermarket</td>
+            <td><span style="color:#0969da;font-weight:600">27AAACB1234F1ZK</span></td>
+            <td>Fortune Sunflower Oil 1L (HSN: 1512)</td>
+            <td>2.0 Pk</td>
+            <td class="col-right">₹162.00</td>
+            <td class="col-right">₹308.57</td>
+            <td><span style="color:#0969da;font-weight:700">5%</span></td>
+            <td class="col-right">₹7.71</td>
+            <td class="col-right">₹7.71</td>
+            <td class="col-right" style="color:#107c41;font-weight:700">₹324.00</td>
+            <td><span class="badge-itc">ITC VERIFIED</span></td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td><strong>DM-MUM-4412</strong></td>
+            <td>11-Nov-2026</td>
+            <td>D-Mart Avenue Supermarts</td>
+            <td><span style="color:#0969da;font-weight:600">27AABCA5566K1ZN</span></td>
+            <td>Dove Cream Beauty Bar 4x100g</td>
+            <td>2.0 No</td>
+            <td class="col-right">₹240.00</td>
+            <td class="col-right">₹406.78</td>
+            <td><span style="color:#b06000;font-weight:700">18%</span></td>
+            <td class="col-right">₹36.61</td>
+            <td class="col-right">₹36.61</td>
+            <td class="col-right" style="color:#107c41;font-weight:700">₹480.00</td>
+            <td><span class="badge-tally">TALLY VCH READY</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Sheet Tabs Bottom -->
+    <div class="sheet-footer-tabs">
+      <div class="sheet-tab-pill"><i class="fas fa-table"></i> GSTR-2B Input Tax Credit</div>
+      <span style="padding:0 8px;cursor:pointer">TallyPrime Purchase Vouchers</span>
+      <span style="padding:0 8px;cursor:pointer">Item Slabs Allocation</span>
+      <span style="padding:0 8px;cursor:pointer">Reconciliation Log</span>
+      <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:#107c41;font-weight:600">
+        <i class="fas fa-circle-check"></i> Mathematical Totals Matched (Diff: ₹0.00)
+      </span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     HOW IT WORKS PIPELINE
+     ══════════════════════════════════════════════════════════════ -->
+<section class="section" id="how-it-works">
+  <div class="section-header">
+    <span class="section-tag">Processing Pipeline</span>
+    <h2 class="section-heading">How Paper Turns Into Accounting Records</h2>
+    <p class="section-desc">Four predictable, transparent steps. Everything executes on your device without sending sensitive vendor data to the cloud.</p>
+  </div>
+
+  <div class="pipeline-box">
+    <div class="step-item">
+      <div class="step-num">01</div>
+      <div class="step-head">Ingest Any Format</div>
+      <div class="step-detail">Drop PDFs, camera photos, or scanned thermal receipts from BigBasket, D-Mart, Blinkit, Zepto, or local suppliers.</div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">02</div>
+      <div class="step-head">Local OCR Extraction</div>
+      <div class="step-detail">Digital PDFs extract in &lt;30ms via vector glyphs. Photos run through OpenCV cleanup and PaddleOCR neural models on your CPU.</div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">03</div>
+      <div class="step-head">GST Reconciliation</div>
+      <div class="step-detail">Automatically identifies 0%, 5%, 12%, 18%, and 28% slabs. Splits CGST/SGST and warns if rate exceeds printed MRP.</div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">04</div>
+      <div class="step-head">1-Click Accounting Export</div>
+      <div class="step-detail">Download ready-to-import TallyPrime XML purchase vouchers, multi-tab Excel files, or universal CSV records.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     CORE CAPABILITIES
+     ══════════════════════════════════════════════════════════════ -->
+<section class="section" id="features">
+  <div class="section-header">
+    <span class="section-tag">Core Capabilities</span>
+    <h2 class="section-heading">Engineered for Indian Invoicing Realities</h2>
+    <p class="section-desc">Designed specifically for dense B2B tables, multi-rate bills, missing columns, and GST compliance.</p>
+  </div>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-microchip"></i></div>
+      <h3 class="feature-card-title">PaddleOCR Neural Engine</h3>
+      <p class="feature-card-desc">
+        Uses PP-OCRv6 deep learning models optimized for complex table borders, thermal print fading, small decimals, and rupee symbols. Operates as an in-memory singleton for low CPU latency.
+      </p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-percent"></i></div>
+      <h3 class="feature-card-title">Dual Tax-Mode Detection</h3>
+      <p class="feature-card-desc">
+        Auto-distinguishes between <strong>Tax-Inclusive Retail</strong> (where MRP includes tax) and <strong>Tax-Exclusive B2B</strong> (where tax is appended to taxable value). Back-calculates base rates automatically.
+      </p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-file-import"></i></div>
+      <h3 class="feature-card-title">TallyPrime XML Engine</h3>
+      <p class="feature-card-desc">
+        Generates standard TallyPrime purchase vouchers with automatic ledger allocation (e.g. <em>Household Cleaning, Dairy Purchase, Input CGST @9%</em>). Import via Gateway of Tally in 1 click.
+      </p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-bolt"></i></div>
+      <h3 class="feature-card-title">Instant Digital PDF Fast-Path</h3>
+      <p class="feature-card-desc">
+        Digital invoices downloaded from accounting software or grocery apps contain vector glyphs. FinBotics extracts coordinates directly in-browser in 18–35 ms, bypassing neural OCR entirely.
+      </p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-database"></i></div>
+      <h3 class="feature-card-title">Deterministic SHA-256 Cache</h3>
+      <p class="feature-card-desc">
+        Every document is content-hashed. Re-uploading or reviewing identical receipts recalls verified data in <strong>2.9 ms</strong> from local SQLite, avoiding redundant OCR passes.
+      </p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-triangle-exclamation"></i></div>
+      <h3 class="feature-card-title">Audit &amp; Discrepancy Desk</h3>
+      <p class="feature-card-desc">
+        Flags pricing anomalies (Rate &gt; MRP), missing vendor GSTINs, and math variances before vouchers enter your books. Edit line items inline with real-time recalculation.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     COMPARISON: FINBOTICS VS GENERIC CLOUD OCR
+     ══════════════════════════════════════════════════════════════ -->
+<section class="section" id="comparison">
+  <div class="section-header">
+    <span class="section-tag">Architecture Comparison</span>
+    <h2 class="section-heading">Why Dedicated Financial Ingestion Matters</h2>
+    <p class="section-desc">Generic cloud OCR tools give you unformatted string blobs. FinBotics gives you reconciled books.</p>
+  </div>
+
+  <div class="comparison-wrap">
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th style="width:30%">Capability</th>
+          <th style="width:35%;color:#1e4d35">FinBotics 3.0</th>
+          <th style="width:35%;color:var(--text-sec)">Generic Cloud OCR (AWS/Google)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Data Privacy &amp; PII</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> 100% On-Device (Never leaves host)</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> Uploaded to external third-party cloud</td>
+        </tr>
+        <tr>
+          <td><strong>Cost per Invoice</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> ₹0.00 (Free local compute)</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> ₹1.50 – ₹8.00 per page API charge</td>
+        </tr>
+        <tr>
+          <td><strong>Indian GST Slab Splitting</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> Automated CGST + SGST (0, 5, 12, 18, 28%)</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> Raw text only; requires custom code</td>
+        </tr>
+        <tr>
+          <td><strong>TallyPrime XML Format</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> Native voucher schema with ledger mapping</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> None (Manual copy-pasting required)</td>
+        </tr>
+        <tr>
+          <td><strong>Digital PDF Speed</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> 18 – 35 milliseconds (Vector bypass)</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> 3 – 8 seconds (Forced bitmap rasterization)</td>
+        </tr>
+        <tr>
+          <td><strong>Reconciliation Guardrails</strong></td>
+          <td class="check-yes"><i class="fas fa-check-circle"></i> Rate &gt; MRP anomaly &amp; total mismatch audit</td>
+          <td class="check-no"><i class="fas fa-xmark-circle"></i> None; silent errors propagate to books</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     PRIVACY MANIFESTO & SOVEREIGN LEDGER SECTION
+     ══════════════════════════════════════════════════════════════ -->
+<section class="section" id="privacy-manifesto" style="padding:54px 32px;background:#f4f0e6;border-radius:20px;margin:50px auto;border:1px solid rgba(30,77,53,0.14)">
+  <div style="max-width:880px;margin:0 auto;text-align:center">
+    <span class="section-tag" style="background:rgba(30,77,53,0.1);color:var(--primary)">
+      <i class="fas fa-shield-halved"></i> Privacy First Accounting
+    </span>
+    <h2 class="section-heading" style="margin-top:12px">Your Books Belong to You. Not Cloud Providers or AI Scrapers.</h2>
+    <p class="section-desc" style="max-width:720px;margin:0 auto 36px">
+      Most document processors quietly send your proprietary supplier invoices, customer GSTINs, and commercial purchase prices to remote cloud servers. FinBotics processes every vector glyph, neural OCR bounding box, and financial audit calculation <strong>100% locally on your own computer</strong>.
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;text-align:left">
+      <div style="background:#fff;padding:24px;border-radius:14px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 14px rgba(0,0,0,0.03)">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(30,77,53,0.08);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:14px">
+          <i class="fas fa-network-wired"></i>
+        </div>
+        <h4 style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Air-Gapped Local Operation</h4>
+        <p style="font-size:12.5px;color:var(--text-sec);line-height:1.6;margin:0">
+          Disconnect your Wi-Fi, unplug your network cable, and FinBotics continues to scan bills, split GST slabs, and export Tally XML vouchers with zero loss in functionality.
+        </p>
+      </div>
+
+      <div style="background:#fff;padding:24px;border-radius:14px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 14px rgba(0,0,0,0.03)">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(30,77,53,0.08);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:14px">
+          <i class="fas fa-user-shield"></i>
+        </div>
+        <h4 style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Complete PII &amp; Commercial Confidentiality</h4>
+        <p style="font-size:12.5px;color:var(--text-sec);line-height:1.6;margin:0">
+          Vendor names, proprietary negotiated rates, itemized discount structures, and bank coordinates are never logged to public telemetry or shared with third parties.
+        </p>
+      </div>
+
+      <div style="background:#fff;padding:24px;border-radius:14px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 4px 14px rgba(0,0,0,0.03)">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(30,77,53,0.08);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:14px">
+          <i class="fas fa-microchip"></i>
+        </div>
+        <h4 style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">Private On-Device Intelligence</h4>
+        <p style="font-size:12.5px;color:var(--text-sec);line-height:1.6;margin:0">
+          FinBot financial assistance reasons entirely in local hardware memory. Your ledger entries and spending patterns are never used to train public AI foundation models.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     BOTTOM CALL TO ACTION
+     ══════════════════════════════════════════════════════════════ -->
+<div class="bottom-cta">
+  <h2>Start Ingesting Invoices in Seconds</h2>
+  <p>No credit card, no cloud account, no subscription required. Runs entirely on your local machine.</p>
+  <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+    <a href="/app" class="btn-main" style="background:#fff;color:var(--primary);box-shadow:0 4px 14px rgba(0,0,0,0.2)">
+      <i class="fas fa-rocket"></i> Open FinBotics App
+    </a>
+    <a href="/auth" class="btn-ghost-sec" style="background:transparent;color:#fff;border-color:rgba(255,255,255,0.3)">
+      <i class="fas fa-key"></i> Demo Credentials
+    </a>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════════════════════════ -->
+<footer>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-weight:700;color:var(--text)">Ƒ FinBotics</span>
+    <span>· Local Document Intelligence &amp; Indian Accounting Engine</span>
+  </div>
+  <div style="display:flex;gap:20px">
+    <a href="/app">Bill Scanner</a>
+    <a href="/auth">Sign In</a>
+    <a href="/landing">Documentation</a>
+  </div>
+</footer>
+
+<!-- ══════════════════════════════════════════════════════════════
+     PARALLAX SPREADSHEET SCROLL SCRIPT
+     ══════════════════════════════════════════════════════════════ -->
+<script>
+// Parallax scroll for the background spreadsheet ledger
+const track = document.getElementById('sheet-track');
+let lastScroll = 0;
+
+window.addEventListener('scroll', () => {
+  const currentScroll = window.scrollY;
+  // Parallax subtle offset
+  const delta = currentScroll * 0.28;
+  if (track) {
+    track.style.transform = `rotate(-4deg) translateY(${delta}px)`;
+  }
+  lastScroll = currentScroll;
+}, { passive: true });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+backend/.venv/
+env/
+venv/
+ENV/
+
+# Database & local state
+finbotics.sqlite3
+*.sqlite3
+*.db
+.env
+
+# OS / Editor files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+*.code-workspace
+
+# Large local personal binaries
+IPD Progress DiaryTE.docx
+finbotics_friend/

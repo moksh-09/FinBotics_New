@@ -3,44 +3,82 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>FinBotics — Grocery Bill Scanner</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<title>FinBotics — Invoice Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<link rel="stylesheet" href="style.css">
-
+<link rel="stylesheet" href="style.css?v=4.0.0">
 </head>
 <body>
 
-<!-- Mobile hamburger menu -->
+<!-- CUSTOM CURSOR -->
+<div class="cursor-outer" id="cursor-outer"></div>
+<div class="cursor-inner" id="cursor-inner"></div>
+
+<!-- Mobile hamburger -->
 <button class="sb-toggle" id="sb-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
 <div class="sb-overlay" id="sb-overlay" onclick="toggleSidebar()"></div>
 
+<!-- SIDEBAR -->
 <nav class="sb" id="sidebar">
   <div class="sb-logo">
     <div class="sb-icon">Ƒ</div>
-    <div class="sb-name"><strong>FinBotics</strong><span>Grocery Suite</span></div>
+    <div class="sb-name">
+      <strong>FinBotics</strong>
+      <span>Invoice Suite</span>
+    </div>
   </div>
+
   <span class="sb-sec">Workspace</span>
-  <a class="sb-link on" data-pg="scanner"><i class="fas fa-scanner"></i> Bill Scanner <span class="sb-badge ok" id="sb-cnt" style="display:none">0</span></a>
-  <a class="sb-link" data-pg="ocr"><i class="fas fa-camera"></i> OCR Scanner</a>
-  <a class="sb-link" data-pg="dashboard"><i class="fas fa-gauge-high"></i> Dashboard</a>
-  <a class="sb-link" data-pg="invoices"><i class="fas fa-file-invoice"></i> Invoices <span class="sb-badge warn" id="sb-flag" style="display:none">0</span></a>
+  <a class="sb-link on" data-pg="scanner">
+    <i class="fas fa-file-invoice"></i>
+    <span>Bill Scanner</span>
+    <span class="sb-badge ok" id="sb-cnt" style="display:none">0</span>
+  </a>
+  <a class="sb-link" data-pg="ocr">
+    <i class="fas fa-camera"></i>
+    <span>OCR Scanner</span>
+  </a>
+  <a class="sb-link" data-pg="dashboard">
+    <i class="fas fa-gauge-high"></i>
+    <span>Dashboard</span>
+  </a>
+  <a class="sb-link" data-pg="invoices">
+    <i class="fas fa-file-invoice-dollar"></i>
+    <span>Invoices</span>
+    <span class="sb-badge warn" id="sb-flag" style="display:none">0</span>
+  </a>
+
   <span class="sb-sec">Finance</span>
-  <a class="sb-link" data-pg="reconcile"><i class="fas fa-arrows-rotate"></i> Reconcile</a>
-  <a class="sb-link" data-pg="analysis"><i class="fas fa-chart-line"></i> Analysis</a>
+  <a class="sb-link" data-pg="reconcile">
+    <i class="fas fa-arrows-rotate"></i>
+    <span>Reconcile</span>
+  </a>
+  <a class="sb-link" data-pg="analysis">
+    <i class="fas fa-chart-line"></i>
+    <span>Analysis</span>
+  </a>
+
   <span class="sb-sec">Tools</span>
-  <a class="sb-link" data-pg="settings"><i class="fas fa-sliders"></i> Settings</a>
+  <a class="sb-link" data-pg="settings">
+    <i class="fas fa-sliders"></i>
+    <span>Settings</span>
+  </a>
+
   <div class="sb-bot">
     <div class="sb-av">Y</div>
-    <div class="sb-ui"><strong>Yuvika</strong><span>Admin</span></div>
+    <div class="sb-ui">
+      <strong>Yuvika</strong>
+      <span>Admin</span>
+    </div>
     <div class="live"></div>
   </div>
 </nav>
 
+<!-- MAIN -->
 <div class="main">
+  <!-- TOPBAR -->
   <div class="topbar">
     <div class="tb-left">
       <h1 id="pg-title">Bill Scanner</h1>
@@ -48,60 +86,66 @@
     </div>
     <div class="tb-right">
       <button class="icon-btn" onclick="exportAll()" title="Export all data as CSV"><i class="fas fa-download"></i></button>
-      <button class="btn btn-g pulse" onclick="openModal()"><i class="fas fa-plus"></i> New Scan</button>
+      <button class="btn btn-primary pulse" onclick="openModal()"><i class="fas fa-plus"></i> New Scan</button>
     </div>
   </div>
 
+  <!-- PAGES -->
   <div class="content">
 
-    <!-- SCANNER -->
+    <!-- ── BILL SCANNER ── -->
     <div class="page on" id="pg-scanner">
       <div class="g6040">
         <div>
           <div class="upzone" id="dz" onclick="triggerFile()">
-            <i class="fas fa-file-pdf big"></i>
-            <h3>Drop your grocery bill PDF here</h3>
-            <p>BigBasket · D-Mart · Blinkit · Reliance Smart · Zepto · Any grocery store<br>Text-based PDFs only (downloaded from app/email)</p>
-            <button class="btn btn-g" onclick="event.stopPropagation();triggerFile()"><i class="fas fa-folder-open"></i> Choose PDF</button>
+            <i class="fas fa-file-invoice big"></i>
+            <h3>Drop any bill or invoice here</h3>
+            <p>PDFs, Photos, Images (PNG, JPG, WEBP) · Digital &amp; Scanned<br>BigBasket · D-Mart · Blinkit · Reliance Smart · Zepto · Any Store or B2B Invoice</p>
+            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="event.stopPropagation();triggerFile()"><i class="fas fa-folder-open"></i> Choose Bill</button>
+              <button class="btn btn-primary" style="background:var(--bl)" onclick="event.stopPropagation();openCamera()"><i class="fas fa-camera"></i> Use Camera</button>
+            </div>
           </div>
-          <input type="file" id="file-in" accept=".pdf" style="display:none" onchange="handleFile(this)"/>
-          <div style="text-align:center;margin:14px 0;font-size:11.5px;color:var(--mu)">— no PDF? load a demo bill —</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="loadDemo('bigbasket')"><i class="fas fa-store" style="color:var(--g)"></i> BigBasket</button>
-            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="loadDemo('dmart')"><i class="fas fa-cart-shopping" style="color:var(--bl)"></i> D-Mart</button>
-            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="loadDemo('blinkit')"><i class="fas fa-bolt" style="color:var(--ye)"></i> Blinkit</button>
-            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="loadDemo('zepto')"><i class="fas fa-zap" style="color:var(--pu)"></i> Zepto</button>
+          <input type="file" id="file-in" accept=".pdf,image/*" style="display:none" onchange="handleFile(this)"/>
+          <input type="file" id="camera-in" accept="image/*" capture="environment" style="display:none" onchange="handleFile(this)"/>
+          <div style="text-align:center;margin:16px 0;font-size:11.5px;color:var(--mu2)">— no bill handy? try an interactive demo —</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px;min-width:80px" onclick="loadDemo('bigbasket')"><i class="fas fa-store" style="color:var(--g)"></i> BigBasket</button>
+            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px;min-width:80px" onclick="loadDemo('dmart')"><i class="fas fa-cart-shopping" style="color:var(--bl)"></i> D-Mart</button>
+            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px;min-width:80px" onclick="loadDemo('blinkit')"><i class="fas fa-bolt" style="color:var(--ye)"></i> Blinkit</button>
+            <button class="btn-ghost" style="flex:1;justify-content:center;font-size:12px;min-width:80px" onclick="loadDemo('zepto')"><i class="fas fa-zap" style="color:var(--pu)"></i> Zepto</button>
           </div>
         </div>
+
         <div class="card" style="display:flex;flex-direction:column">
           <div class="ch">
-            <div class="ct"><i class="fas fa-clock-rotate-left" style="color:var(--g)"></i> Recent Scans</div>
-            <span id="scan-lbl" style="font-size:11px;color:var(--mu)">0 scans</span>
+            <div class="ct"><i class="fas fa-clock-rotate-left" style="color:var(--g)"></i> Recent Invoices</div>
+            <span id="scan-lbl" style="font-size:11px;color:var(--mu2)">0 invoices</span>
           </div>
           <div id="recent-list" style="flex:1">
             <div class="empty" style="padding:28px 10px">
               <div class="e-ico"><i class="fas fa-inbox"></i></div>
-              <p style="font-size:12px">No scans yet.</p>
+              <p style="font-size:12px;color:var(--mu2)">No invoices scanned yet.</p>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- OCR SCANNER -->
+    <!-- ── OCR SCANNER ── -->
     <div class="page" id="pg-ocr">
       <div class="g6040">
         <div>
           <div class="upzone" id="ocr-dz" onclick="triggerOCRFile()">
             <i class="fas fa-camera-retro big"></i>
             <h3>Upload or Capture a Grocery Bill Image</h3>
-            <p>Snap a photo or upload an image of your grocery bill<br>Supports JPG, PNG, WEBP — powered by Tesseract.js OCR</p>
+            <p>Snap a photo or upload an image of your bill<br>Supports JPG, PNG, WEBP — adaptive image quality assessment + OpenCV preprocessing + PaddleOCR</p>
             <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-              <button class="btn btn-g" onclick="event.stopPropagation();triggerOCRFile()"><i class="fas fa-image"></i> Choose Image</button>
-              <button class="btn btn-g" style="background:linear-gradient(135deg,#0096c7,#0077b6)" onclick="event.stopPropagation();openOCRCamera()"><i class="fas fa-camera"></i> Use Camera</button>
+              <button class="btn btn-primary" onclick="event.stopPropagation();triggerOCRFile()"><i class="fas fa-image"></i> Choose Image</button>
+              <button class="btn btn-primary" style="background:var(--bl)" onclick="event.stopPropagation();openOCRCamera()"><i class="fas fa-camera"></i> Use Camera</button>
             </div>
           </div>
-          <input type="file" id="ocr-file-in" accept="image/*" style="display:none" onchange="handleOCRFile(this)"/>
+          <input type="file" id="ocr-file-in" accept="image/*,.pdf" style="display:none" onchange="handleOCRFile(this)"/>
           <input type="file" id="ocr-camera-in" accept="image/*" capture="environment" style="display:none" onchange="handleOCRFile(this)"/>
 
           <!-- OCR Processing State -->
@@ -110,11 +154,17 @@
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
                 <i class="fas fa-cog fa-spin" style="color:var(--g);font-size:20px"></i>
                 <div>
-                  <div style="font-size:14px;font-weight:600">Scanning bill image…</div>
-                  <div style="font-size:11.5px;color:var(--mu)" id="ocr-status">Initializing OCR engine…</div>
+                  <div style="font-size:14px;font-weight:600;color:var(--tx)">Scanning bill image…</div>
+                  <div style="font-size:11.5px;color:var(--mu2)" id="ocr-status">Preparing image quality assessment…</div>
                 </div>
               </div>
               <div class="prog"><div class="prog-f" id="ocr-pbar" style="width:0%"></div></div>
+              <div id="ocr-research-stage" style="margin-top:14px;background:var(--card-bg2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;font-size:11.5px;color:var(--mu2);line-height:1.8">
+                <div><strong style="color:var(--tx)">Research pipeline</strong></div>
+                <div id="ocr-quality-stage">1. Assessing image quality…</div>
+                <div id="ocr-preprocess-stage">2. Adaptive preprocessing: pending</div>
+                <div id="ocr-engine-stage">3. PaddleOCR: pending</div>
+              </div>
             </div>
           </div>
 
@@ -122,7 +172,7 @@
           <div id="ocr-preview-wrap" style="display:none;margin-top:16px">
             <div class="card" style="padding:10px">
               <div class="ch" style="margin-bottom:8px"><div class="ct"><i class="fas fa-eye" style="color:var(--bl)"></i> Image Preview</div></div>
-              <img id="ocr-preview-img" style="width:100%;border-radius:8px;max-height:300px;object-fit:contain;background:var(--card2)" />
+              <img id="ocr-preview-img" style="width:100%;border-radius:8px;max-height:300px;object-fit:contain;background:var(--card-bg2)" />
             </div>
           </div>
         </div>
@@ -130,12 +180,12 @@
         <div class="card" style="display:flex;flex-direction:column">
           <div class="ch">
             <div class="ct"><i class="fas fa-table" style="color:var(--g)"></i> OCR Scans</div>
-            <span id="ocr-scan-lbl" style="font-size:11px;color:var(--mu)">0 scans</span>
+            <span id="ocr-scan-lbl" style="font-size:11px;color:var(--mu2)">0 scans</span>
           </div>
           <div id="ocr-recent-list" style="flex:1">
             <div class="empty" style="padding:28px 10px">
               <div class="e-ico"><i class="fas fa-camera"></i></div>
-              <p style="font-size:12px">No OCR scans yet.<br>Upload or capture a bill image to get started.</p>
+              <p style="font-size:12px;color:var(--mu2)">No OCR scans yet.<br>Upload or capture a bill image to get started.</p>
             </div>
           </div>
         </div>
@@ -147,19 +197,24 @@
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
             <i class="fas fa-circle-check fa-lg" style="color:var(--g)"></i>
             <div>
-              <div style="font-size:15px;font-weight:600">Bill Extracted via OCR!</div>
-              <div style="font-size:11.5px;color:var(--mu)" id="ocr-r-sub">0 items detected</div>
+              <div style="font-size:15px;font-weight:600;color:var(--tx)">Bill Extracted via PaddleOCR!</div>
+              <div style="font-size:11.5px;color:var(--mu2)" id="ocr-r-sub">0 items detected</div>
             </div>
-            <span id="ocr-r-store" style="margin-left:auto;background:var(--gd);color:var(--g);font-size:11px;padding:3px 11px;border-radius:99px;font-weight:700"></span>
+            <span id="ocr-r-store" style="margin-left:auto;background:var(--gd);color:var(--g);font-size:11px;padding:3px 12px;border-radius:99px;font-weight:700"></span>
           </div>
           <div class="ocr-g" id="ocr-r-hdr"></div>
+          <div id="ocr-r-flags" style="margin-top:12px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 7px">
+            <span style="font-size:11px;color:var(--mu2)">Edit values before saving or export</span>
+            <button class="btn-ghost" style="padding:4px 8px;font-size:11px" onclick="addDraftItem('ocr')"><i class="fas fa-plus"></i> Add item</button>
+          </div>
           <div class="tbl-wrap" style="max-height:350px;overflow-y:auto">
             <table>
-              <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Rate</th><th>GST</th><th>Total</th></tr></thead>
+              <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Rate</th><th>GST</th><th>Total</th><th></th></tr></thead>
               <tbody id="ocr-r-tbody"></tbody>
             </table>
           </div>
-          <div id="ocr-r-noitems" style="display:none;background:var(--ord);border:1px solid rgba(255,112,67,.2);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--mu2);margin-top:12px">
+          <div id="ocr-r-noitems" style="display:none;background:var(--ord);border:1px solid rgba(212,146,26,.2);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--mu);margin-top:12px">
             <i class="fas fa-exclamation-triangle" style="color:var(--or);margin-right:8px"></i>
             No items could be extracted. Try a clearer image or better lighting.
           </div>
@@ -167,17 +222,17 @@
             <div class="gst-hdr"><span>Slab</span><span>Taxable</span><span>CGST</span><span>SGST</span><span>GST Total</span></div>
             <div id="ocr-r-gst"></div>
             <div class="gst-foot">
-              <span style="font-weight:700;font-size:14px">Grand Total</span>
-              <span id="ocr-r-total" style="font-family:'Geist Mono',monospace;font-size:18px;font-weight:700;color:var(--g)">₹0</span>
+              <span style="font-weight:700;font-size:14px;color:var(--tx)">Grand Total</span>
+              <span id="ocr-r-total" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--g)">₹0</span>
             </div>
           </div>
-          <div style="display:flex;gap:9px;margin-top:16px;flex-wrap:wrap">
-            <button class="btn btn-g" style="flex:1;min-width:150px;justify-content:center" onclick="saveOCRBill()"><i class="fas fa-floppy-disk"></i> Save Bill</button>
-            <button class="btn btn-g" style="flex:1;min-width:150px;justify-content:center;background:linear-gradient(135deg,#0096c7,#0077b6)" onclick="dlTallyXML(_ocrPend)"><i class="fas fa-file-import"></i> Export Tally XML</button>
+          <div style="display:flex;gap:9px;margin-top:18px;flex-wrap:wrap">
+            <button class="btn btn-primary" style="flex:1;min-width:150px;justify-content:center" onclick="saveOCRBill()"><i class="fas fa-floppy-disk"></i> Save Bill</button>
+            <button class="btn btn-primary" style="flex:1;min-width:150px;justify-content:center;background:var(--bl)" onclick="dlTallyXML(_ocrPend)"><i class="fas fa-file-import"></i> Export Tally XML</button>
           </div>
           <div style="display:flex;gap:9px;margin-top:8px">
-            <button class="btn btn-o" onclick="dlOCRExcel()"><i class="fas fa-file-excel"></i> Excel</button>
-            <button class="btn btn-o" onclick="dlOCRCsv()"><i class="fas fa-download"></i> CSV</button>
+            <button class="btn btn-outline" onclick="dlOCRExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+            <button class="btn btn-outline" onclick="dlOCRCsv()"><i class="fas fa-download"></i> CSV</button>
             <button class="btn-ghost" style="margin-left:auto" onclick="resetOCR()">Scan Another</button>
           </div>
         </div>
@@ -185,36 +240,40 @@
         <!-- Raw OCR Text (collapsible) -->
         <div class="card" style="margin-top:14px">
           <div class="ch" style="cursor:pointer" onclick="document.getElementById('ocr-raw-text').style.display=document.getElementById('ocr-raw-text').style.display==='none'?'':'none'">
-            <div class="ct"><i class="fas fa-file-lines" style="color:var(--mu2)"></i> Raw OCR Text</div>
-            <span style="font-size:11px;color:var(--mu)">click to toggle</span>
+            <div class="ct"><i class="fas fa-file-lines" style="color:var(--mu2)"></i> Raw OCR Text &amp; Research Output</div>
+            <span style="font-size:11px;color:var(--mu2)">click to toggle</span>
           </div>
-          <pre id="ocr-raw-text" style="display:none;background:var(--card2);border:1px solid var(--b1);border-radius:8px;padding:14px;font-size:11.5px;color:var(--mu2);white-space:pre-wrap;max-height:250px;overflow-y:auto;font-family:'Geist Mono',monospace;line-height:1.7"></pre>
+          <pre id="ocr-raw-text" style="display:none;background:var(--card-bg2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:11.5px;color:var(--mu2);white-space:pre-wrap;max-height:250px;overflow-y:auto;font-family:'JetBrains Mono',monospace;line-height:1.7"></pre>
         </div>
       </div>
     </div>
 
-    <!-- DASHBOARD -->
+    <!-- ── DASHBOARD ── -->
     <div class="page" id="pg-dashboard">
       <div class="stats" id="dash-stats"></div>
       <div id="dash-empty"></div>
       <div id="dash-data" style="display:none"></div>
     </div>
 
-    <!-- INVOICES -->
+    <!-- ── INVOICES ── -->
     <div class="page" id="pg-invoices">
       <div class="card">
         <div class="ch">
-          <div><div class="ct"><i class="fas fa-file-invoice" style="color:var(--g)"></i> All Invoices</div><div class="cs" id="inv-sub">0 bills</div></div>
+          <div>
+            <div class="ct"><i class="fas fa-file-invoice" style="color:var(--g)"></i> All Invoices</div>
+            <div class="cs" id="inv-sub">0 bills</div>
+          </div>
           <div style="display:flex;gap:8px">
             <button class="btn-ghost" onclick="exportAll()"><i class="fas fa-download"></i> Export CSV</button>
-            <button class="btn btn-g" onclick="openModal()"><i class="fas fa-plus"></i> New Scan</button>
+            <button class="btn btn-primary" onclick="openModal()"><i class="fas fa-plus"></i> New Scan</button>
           </div>
         </div>
-        <div style="display:flex;gap:10px;margin-bottom:14px">
-          <input id="inv-q" style="flex:1;background:var(--card2);border:1px solid var(--b1);border-radius:9px;padding:8px 13px;color:var(--tx);font-family:'DM Sans',sans-serif;font-size:13px;outline:none" placeholder="Search store, bill number…" oninput="renderInvoices()"/>
-          <select id="inv-f" style="background:var(--card2);border:1px solid var(--b1);border-radius:9px;padding:8px 13px;color:var(--tx);font-family:'DM Sans',sans-serif;font-size:12.5px;outline:none;flex:0 0 130px" onchange="renderInvoices()">
+        <div style="display:flex;gap:10px;margin-bottom:16px">
+          <input id="inv-q" style="flex:1" placeholder="Search store, bill number…" oninput="renderInvoices()"/>
+          <select id="inv-f" onchange="renderInvoices()" style="flex:0 0 150px">
             <option value="all">All Status</option>
-            <option value="ok">Matched</option>
+            <option value="ok">Verified Only</option>
+            <option value="warn">Warnings</option>
             <option value="flag">Flagged</option>
           </select>
         </div>
@@ -222,65 +281,174 @@
       </div>
     </div>
 
-    <!-- RECONCILE -->
+    <!-- ── RECONCILE ── -->
     <div class="page" id="pg-reconcile"><div id="rec-body"></div></div>
 
-    <!-- ANALYSIS -->
+    <!-- ── ANALYSIS ── -->
     <div class="page" id="pg-analysis"><div id="ana-body"></div></div>
 
-    <!-- SETTINGS -->
+    <!-- ── SETTINGS ── -->
     <div class="page" id="pg-settings">
-      <div class="g2" style="margin-bottom:16px">
-        <div class="card">
-          <div class="ch"><div class="ct"><i class="fas fa-gear" style="color:var(--bl)"></i> Configuration</div></div>
-          <div style="font-size:13px">
-            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1)"><span style="color:var(--mu2)">GST Mode</span><span class="mono fw7" style="color:var(--g)">Inclusive (MRP)</span></div>
-            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1)"><span style="color:var(--mu2)">Currency</span><span class="mono fw7" style="color:var(--g)">INR ₹</span></div>
-            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1)"><span style="color:var(--mu2)">Tally Export</span><span class="mono fw7" style="color:var(--g)">XML + CSV</span></div>
-            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1)"><span style="color:var(--mu2)">API Calls (except Chatbot)</span><span class="mono fw7" style="color:var(--g)">ZERO</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0"><span style="color:var(--mu2)">FinBot API (Gemini)</span><button class="btn-ghost" style="padding:4px 8px;font-size:11px" onclick="setGeminiKey()"><i class="fas fa-key"></i> Key Config</button></div>
+
+      <!-- Hero intro -->
+      <div class="settings-hero">
+        <div>
+          <div class="settings-eyebrow"><i class="fas fa-sliders"></i> CONFIGURATION</div>
+          <h2 class="settings-title">System Settings</h2>
+          <p class="settings-sub">Manage your FinBotics workspace, data, and integrations.</p>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+
+        <!-- Configuration Card -->
+        <div class="card settings-card">
+          <div class="settings-card-header">
+            <div class="settings-card-icon" style="background:var(--gd)"><i class="fas fa-gear" style="color:var(--g)"></i></div>
+            <div>
+              <div class="settings-card-title">Configuration</div>
+              <div class="settings-card-sub">Core parsing and export settings</div>
+            </div>
+          </div>
+          <div class="settings-rows">
+            <div class="settings-row">
+              <div class="settings-row-left">
+                <div class="settings-row-label">GST Mode</div>
+                <div class="settings-row-desc">How tax is computed from item prices</div>
+              </div>
+              <span class="settings-pill green">Inclusive (MRP)</span>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-left">
+                <div class="settings-row-label">Currency</div>
+                <div class="settings-row-desc">Default currency for all invoices</div>
+              </div>
+              <span class="settings-pill green">INR ₹</span>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-left">
+                <div class="settings-row-label">Tally Export</div>
+                <div class="settings-row-desc">Formats available for export</div>
+              </div>
+              <span class="settings-pill blue">XML + CSV + XLSX</span>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-left">
+                <div class="settings-row-label">OCR Engine</div>
+                <div class="settings-row-desc">Neural recognition pipeline</div>
+              </div>
+              <span class="settings-pill green">PaddleOCR PP-OCRv6</span>
+            </div>
+            <div class="settings-row" style="border:none">
+              <div class="settings-row-left">
+                <div class="settings-row-label">FinBot Intelligence Engine</div>
+                <div class="settings-row-desc">On-device neural engine — 100% private confidential financial analysis</div>
+              </div>
+              <span class="settings-pill green" id="settings-ai-pill"><i class="fas fa-shield-halved" style="margin-right:5px"></i>Private &amp; On-Device</span>
+            </div>
           </div>
         </div>
-        <div class="card">
-          <div class="ch"><div class="ct"><i class="fas fa-database" style="color:var(--g)"></i> Data</div></div>
-          <div style="font-size:12.5px;color:var(--mu2);margin-bottom:16px;line-height:1.7">All data stays in this browser session. Nothing is sent to any server. Zero API.</div>
-          <button class="btn btn-o" style="width:100%;justify-content:center" onclick="clearAll()"><i class="fas fa-trash"></i> Clear All Scanned Data</button>
+
+        <!-- Data Management Card -->
+        <div class="card settings-card">
+          <div class="settings-card-header">
+            <div class="settings-card-icon" style="background:var(--bld)"><i class="fas fa-database" style="color:var(--bl)"></i></div>
+            <div>
+              <div class="settings-card-title">Data Management</div>
+              <div class="settings-card-sub">Local SQLite database</div>
+            </div>
+          </div>
+          <div style="font-size:12.5px;color:var(--mu);line-height:1.85;font-weight:300;padding:6px 0 20px">
+            All invoices are stored in your local <span class="mono" style="font-size:11.5px;background:var(--card-bg3);padding:1px 6px;border-radius:4px">finbotics.sqlite3</span> database. OCR images are processed entirely on your machine — nothing is sent to any cloud service.
+          </div>
+          <div class="note note-warn" style="margin-bottom:16px">
+            <i class="fas fa-triangle-exclamation"></i>
+            <span>This action permanently deletes all saved invoice data and cannot be undone.</span>
+          </div>
+          <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="clearAll()"><i class="fas fa-trash"></i> Clear All Scanned Data</button>
         </div>
-      </div>
-      <div class="card">
-        <div class="ch"><div class="ct"><i class="fas fa-info-circle" style="color:var(--bl)"></i> How It Works</div></div>
-        <div class="note"><i class="fas fa-check-circle"></i> PDF.js extracts text from your PDF in the browser — no server, no API, no upload. Works with digital bills (BigBasket, D-Mart, Blinkit app PDFs).</div>
-        <div class="note note-warn"><i class="fas fa-exclamation-triangle"></i><span style="color:var(--mu2)">Scanned image PDFs (camera photos) won't parse — use digital bills only.</span></div>
-        <div style="font-size:12.5px;line-height:2">
-          <strong style="color:var(--tx);display:block;margin-bottom:6px">Hardcoded GST Slabs</strong>
-          <span class="gb g0">0%</span> Salt, Atta, Dal, Rice, Pulses &nbsp;
-          <span class="gb g5">5%</span> Milk, Oil, Sugar, Tea, Bread &nbsp;
-          <span class="gb g12">12%</span> Biscuits, Chips, Noodles, Snacks &nbsp;
-          <span class="gb g18">18%</span> Soap, Shampoo, Detergent, Toothpaste &nbsp;
-          <span class="gb g28">28%</span> Aerated drinks, Luxury items
+
+        <!-- How It Works Card (full width) -->
+        <div class="card settings-card" style="grid-column:1/-1">
+          <div class="settings-card-header">
+            <div class="settings-card-icon" style="background:var(--goldd)"><i class="fas fa-diagram-project" style="color:var(--gold)"></i></div>
+            <div>
+              <div class="settings-card-title">How It Works</div>
+              <div class="settings-card-sub">Processing pipeline &amp; GST reference</div>
+            </div>
+          </div>
+          <div class="settings-pipeline">
+            <div class="pipeline-step">
+              <div class="pipeline-num">01</div>
+              <div class="pipeline-ico"><i class="fas fa-file-arrow-up"></i></div>
+              <div class="pipeline-label">Upload</div>
+              <div class="pipeline-desc">PDF or image dropped or captured</div>
+            </div>
+            <div class="pipeline-arrow"><i class="fas fa-arrow-right"></i></div>
+            <div class="pipeline-step">
+              <div class="pipeline-num">02</div>
+              <div class="pipeline-ico"><i class="fas fa-microchip"></i></div>
+              <div class="pipeline-label">OCR / Parse</div>
+              <div class="pipeline-desc">PaddleOCR or vector text extraction</div>
+            </div>
+            <div class="pipeline-arrow"><i class="fas fa-arrow-right"></i></div>
+            <div class="pipeline-step">
+              <div class="pipeline-num">03</div>
+              <div class="pipeline-ico"><i class="fas fa-percent"></i></div>
+              <div class="pipeline-label">GST Engine</div>
+              <div class="pipeline-desc">Dual-mode tax computation &amp; validation</div>
+            </div>
+            <div class="pipeline-arrow"><i class="fas fa-arrow-right"></i></div>
+            <div class="pipeline-step">
+              <div class="pipeline-num">04</div>
+              <div class="pipeline-ico"><i class="fas fa-file-export"></i></div>
+              <div class="pipeline-label">Export</div>
+              <div class="pipeline-desc">Tally XML, Excel, or CSV</div>
+            </div>
+          </div>
+
+          <div style="margin-top:24px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:var(--mu2);font-weight:600;margin-bottom:12px">Indian GST Slab Reference</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:12.5px">
+              <div class="gst-slab-chip"><span class="gb gst-0">0%</span> <span>Salt, Atta, Dal, Rice, Pulses</span></div>
+              <div class="gst-slab-chip"><span class="gb gst-5">5%</span> <span>Milk, Oil, Sugar, Tea, Bread</span></div>
+              <div class="gst-slab-chip"><span class="gb gst-12">12%</span> <span>Biscuits, Chips, Noodles, Snacks</span></div>
+              <div class="gst-slab-chip"><span class="gb gst-18">18%</span> <span>Soap, Shampoo, Detergent, Toothpaste</span></div>
+              <div class="gst-slab-chip"><span class="gb gst-28">28%</span> <span>Aerated drinks, Luxury items</span></div>
+            </div>
+          </div>
+
+          <div class="note" style="margin-top:16px;margin-bottom:0">
+            <i class="fas fa-check-circle"></i>
+            <span>Prototype limits: 25 MB per image · 30 megapixels · 30 PDF pages · 1 million characters of text. Always verify extracted values against the original bill before exporting to Tally.</span>
+          </div>
         </div>
-      </div>
+
+      </div><!-- /settings-grid -->
     </div>
 
-  </div>
-</div>
+  </div><!-- /content -->
+</div><!-- /main -->
 
-<!-- SCAN MODAL -->
+<!-- ── SCAN MODAL ── -->
 <div class="modal-bg" id="scan-modal">
   <div class="modal">
     <button class="mcls" onclick="closeModal()">✕</button>
 
     <div id="m-up">
-      <h2><i class="fas fa-basket-shopping" style="color:var(--g);margin-right:8px"></i>Scan Grocery Bill</h2>
-      <p class="modal-sub">PDF parsed 100% in your browser — zero API, zero upload</p>
+      <h2><i class="fas fa-basket-shopping" style="color:var(--g);margin-right:8px"></i>Scan Bill or Invoice</h2>
+      <p class="modal-sub">PDFs, camera photos, or scanned receipts — auto-detected &amp; parsed fast.</p>
       <div class="upzone" id="m-dz" onclick="triggerFile()">
-        <i class="fas fa-file-pdf big"></i>
-        <h3>Drop grocery PDF here</h3>
-        <p>BigBasket · D-Mart · Blinkit · Reliance Smart · Zepto</p>
-        <button class="btn btn-g" onclick="event.stopPropagation();triggerFile()"><i class="fas fa-folder-open"></i> Choose PDF</button>
+        <i class="fas fa-file-invoice big"></i>
+        <h3>Drop bill PDF or image here</h3>
+        <p>BigBasket · D-Mart · Blinkit · Reliance Smart · Zepto · Any Store</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="event.stopPropagation();triggerFile()"><i class="fas fa-folder-open"></i> Choose File</button>
+          <button class="btn btn-primary" style="background:var(--bl)" onclick="event.stopPropagation();openCamera()"><i class="fas fa-camera"></i> Camera</button>
+        </div>
       </div>
-      <div style="text-align:center;margin:12px 0;font-size:11.5px;color:var(--mu)">— demo bills —</div>
-      <div style="display:flex;gap:8px">
+      <div style="text-align:center;margin:14px 0;font-size:11.5px;color:var(--mu2)">— demo bills —</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-ghost" style="flex:1;justify-content:center;font-size:11.5px" onclick="loadDemo('bigbasket')"><i class="fas fa-store" style="color:var(--g)"></i> BigBasket</button>
         <button class="btn-ghost" style="flex:1;justify-content:center;font-size:11.5px" onclick="loadDemo('dmart')"><i class="fas fa-cart-shopping" style="color:var(--bl)"></i> D-Mart</button>
         <button class="btn-ghost" style="flex:1;justify-content:center;font-size:11.5px" onclick="loadDemo('blinkit')"><i class="fas fa-bolt" style="color:var(--ye)"></i> Blinkit</button>
@@ -292,71 +460,175 @@
       <h2><i class="fas fa-cog fa-spin" style="color:var(--g);margin-right:8px"></i>Parsing…</h2>
       <p class="modal-sub" id="m-fname">Reading…</p>
       <div class="prog"><div class="prog-f" id="m-pbar" style="width:0%"></div></div>
-      <div id="m-stages" style="margin-top:10px"></div>
+      <div id="m-stages" style="margin-top:12px"></div>
     </div>
 
     <div id="m-res" style="display:none">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <i class="fas fa-circle-check fa-lg" style="color:var(--g)"></i>
-        <div><div style="font-size:15px;font-weight:600">Bill Parsed!</div><div style="font-size:11.5px;color:var(--mu)" id="r-sub">0 items</div></div>
-        <span id="r-store" style="margin-left:auto;background:var(--gd);color:var(--g);font-size:11px;padding:3px 11px;border-radius:99px;font-weight:700"></span>
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--tx)">Bill Parsed!</div>
+          <div style="font-size:11.5px;color:var(--mu2)" id="r-sub">0 items</div>
+        </div>
+        <span id="r-store" style="margin-left:auto;background:var(--gd);color:var(--g);font-size:11px;padding:3px 12px;border-radius:99px;font-weight:700"></span>
       </div>
       <div class="ocr-g" id="r-hdr"></div>
+      <div id="r-flags" style="margin-top:12px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 7px">
+        <span style="font-size:11px;color:var(--mu2)">Edit values before saving or export</span>
+        <button class="btn-ghost" style="padding:4px 8px;font-size:11px" onclick="addDraftItem('pdf')"><i class="fas fa-plus"></i> Add item</button>
+      </div>
       <div class="tbl-wrap" style="max-height:220px;overflow-y:auto">
         <table>
-          <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Rate</th><th>GST</th><th>Total</th></tr></thead>
+          <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Rate</th><th>GST</th><th>Total</th><th></th></tr></thead>
           <tbody id="r-tbody"></tbody>
         </table>
       </div>
-      <div id="r-noitems" style="display:none;background:var(--ord);border:1px solid rgba(255,112,67,.2);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--mu2);margin-top:12px">
+      <div id="r-noitems" style="display:none;background:var(--ord);border:1px solid rgba(212,146,26,.2);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--mu);margin-top:12px">
         <i class="fas fa-exclamation-triangle" style="color:var(--or);margin-right:8px"></i>
-        No items detected — this may be an image/scanned PDF. Use a digital bill from the app.
+        No line items were detected. Review raw OCR text, add the missing data manually, or try a clearer document.
       </div>
       <div class="gst-sum">
         <div class="gst-hdr"><span>Slab</span><span>Taxable</span><span>CGST</span><span>SGST</span><span>GST Total</span></div>
         <div id="r-gst"></div>
         <div class="gst-foot">
-          <span style="font-weight:700;font-size:14px">Grand Total</span>
-          <span id="r-total" style="font-family:'Geist Mono',monospace;font-size:18px;font-weight:700;color:var(--g)">₹0</span>
+          <span style="font-weight:700;font-size:14px;color:var(--tx)">Grand Total</span>
+          <span id="r-total" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--g)">₹0</span>
         </div>
       </div>
-      <div style="display:flex;gap:9px;margin-top:16px;flex-wrap:wrap">
-        <button class="btn btn-g" style="flex:1;min-width:150px;justify-content:center" onclick="saveBill()"><i class="fas fa-floppy-disk"></i> Save Bill</button>
-        <button class="btn btn-g" style="flex:1;min-width:150px;justify-content:center;background:linear-gradient(135deg,#0096c7,#0077b6)" onclick="dlTallyXML(_pend)"><i class="fas fa-file-import"></i> Export Tally XML</button>
+      <div style="display:flex;gap:9px;margin-top:18px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1;min-width:150px;justify-content:center" onclick="saveBill()"><i class="fas fa-floppy-disk"></i> Save Bill</button>
+        <button class="btn btn-primary" style="flex:1;min-width:150px;justify-content:center;background:var(--bl)" onclick="dlTallyXML(_pend)"><i class="fas fa-file-import"></i> Export Tally XML</button>
       </div>
       <div style="display:flex;gap:9px;margin-top:8px">
-        <button class="btn btn-o" onclick="dlExcel()"><i class="fas fa-file-excel"></i> Excel</button>
-        <button class="btn btn-o" onclick="dlCSV()"><i class="fas fa-download"></i> CSV</button>
+        <button class="btn btn-outline" onclick="dlExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+        <button class="btn btn-outline" onclick="dlCSV()"><i class="fas fa-download"></i> CSV</button>
         <button class="btn-ghost" style="margin-left:auto" onclick="resetModal()">Scan Another</button>
       </div>
-      <div style="margin-top:12px;background:rgba(0,150,199,.08);border:1px solid rgba(0,150,199,.25);border-radius:9px;padding:10px 14px;font-size:12px;color:var(--mu2);line-height:1.8">
-        <i class="fas fa-circle-info" style="color:#0096c7;margin-right:6px"></i>
-        <strong style="color:var(--tx)">Tally import:</strong> TallyPrime → Gateway of Tally → <strong style="color:#0096c7">Import → Vouchers</strong> → select downloaded XML → Accept
+      <div style="margin-top:14px;background:rgba(0,119,182,.07);border:1px solid rgba(0,119,182,.2);border-radius:9px;padding:11px 14px;font-size:12px;color:var(--mu2);line-height:1.8">
+        <i class="fas fa-circle-info" style="color:var(--bl);margin-right:6px"></i>
+        <strong style="color:var(--tx)">Tally import:</strong> TallyPrime → Gateway of Tally → <strong style="color:var(--bl)">Import → Vouchers</strong> → select downloaded XML → Accept
       </div>
     </div>
   </div>
 </div>
 
-<!-- BILL DETAIL MODAL -->
+<!-- ── BILL DETAIL MODAL ── -->
 <div class="modal-bg" id="det-modal">
-  <div class="modal"><button class="mcls" onclick="closeDet()">✕</button><div id="det-body"></div></div>
+  <div class="modal" style="max-width:820px"><button class="mcls" onclick="closeDet()">✕</button><div id="det-body"></div></div>
 </div>
 
+<!-- ── DESKTOP LIVE CAMERA SCANNER MODAL ── -->
+<div class="modal-bg" id="camera-modal">
+  <div class="modal camera-modal-content">
+    <button class="mcls" onclick="closeLiveCamera()">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div class="camera-live-pulse"></div>
+      <div>
+        <h2 style="margin:0;font-size:20px"><i class="fas fa-camera" style="color:var(--g);margin-right:8px"></i>Live Bill Camera Scanner</h2>
+        <div style="font-size:12px;color:var(--mu2);margin-top:2px">Align your physical paper invoice or receipt within the alignment frame</div>
+      </div>
+      <span class="badge badge-ok" style="margin-left:auto;font-size:10px"><i class="fas fa-video"></i> WebRTC Camera</span>
+    </div>
+
+    <!-- Live Viewfinder -->
+    <div class="camera-viewport-wrap">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <canvas id="camera-canvas" style="display:none"></canvas>
+      
+      <!-- Document Alignment Guides -->
+      <div class="camera-guides">
+        <div class="camera-guide-corner top-left"></div>
+        <div class="camera-guide-corner top-right"></div>
+        <div class="camera-guide-corner bottom-left"></div>
+        <div class="camera-guide-corner bottom-right"></div>
+        <div class="camera-guide-label"><i class="fas fa-receipt"></i> Place Bill Inside Frame</div>
+      </div>
+    </div>
+
+    <!-- Camera Control Bar -->
+    <div class="camera-controls">
+      <button class="btn btn-primary" onclick="captureLivePhoto()" style="padding:12px 28px;font-size:14px">
+        <i class="fas fa-circle-dot"></i> Capture &amp; Process Bill
+      </button>
+      <button class="btn-ghost" onclick="switchCameraDevice()" title="Switch Camera" id="camera-switch-btn">
+        <i class="fas fa-rotate"></i> Switch Camera
+      </button>
+      <button class="btn-ghost" onclick="closeLiveCamera()">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
 <div id="toasts"></div>
 
-<script src="script.js"></script>
-<div id="fin-chat" class="chat-container">
+<script src="script.js?v=4.0.0"></script>
+
+<!-- ── FINBOT CHAT: ON-DEVICE AI ── -->
+<div id="fin-chat" class="chat-container closed">
   <div class="chat-header" onclick="toggleChat()">
-    <span><i class="fas fa-robot"></i> FinBot Assistant</span>
-    <i class="fas fa-chevron-up" id="chat-icon"></i>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="finbot-avatar"><i class="fas fa-robot"></i></div>
+      <div>
+        <div style="font-weight:700;font-size:13px;line-height:1.2">FinBot Intelligence</div>
+        <div style="font-size:10px;opacity:0.9;display:flex;align-items:center;gap:4px">
+          <span class="bot-online-dot" id="finbot-dot"></span>
+          <span id="finbot-model-label">Private &amp; On-Device</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="badge" id="finbot-badge-tag" style="background:rgba(255,255,255,0.22);color:#fff;font-size:9.5px;padding:2px 7px;border-radius:10px">On-Device AI</span>
+      <i class="fas fa-chevron-up" id="chat-icon"></i>
+    </div>
   </div>
+
+  <div class="chat-quick-chips" id="chat-chips">
+    <button class="chip-btn" onclick="sendQuickPrompt('What is my total spend and total claimable GST?')">💰 Spend &amp; GST</button>
+    <button class="chip-btn" onclick="sendQuickPrompt('Are there any flagged invoices, warnings, or compliance issues?')">⚠️ Warnings &amp; Flags</button>
+    <button class="chip-btn" onclick="sendQuickPrompt('Give me a vendor breakdown of my top stores.')">🏪 Top Vendors</button>
+    <button class="chip-btn" onclick="sendQuickPrompt('Summarize my recent invoices for TallyPrime filing.')">📑 Tally Summary</button>
+  </div>
+
   <div class="chat-body" id="chat-body">
-    <div class="msg bot">Hi Yuvika! I can help you analyze your grocery data. Try asking "How much have I spent?"</div>
+    <div class="msg bot">
+      <p>Hi!</p>
+      <p style="margin-top:4px;font-size:11.5px;color:var(--mu2)">I can help you audit invoices, verify GST slabs, review warnings, and analyze your spending. Ask me anything!</p>
+      <div class="bot-meta"><i class="fas fa-shield-halved"></i> 100% On-Device Privacy</div>
+    </div>
   </div>
+
   <div class="chat-input">
-    <input type="text" id="chat-in" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') askFinBot()">
-    <button onclick="askFinBot()"><i class="fas fa-paper-plane"></i></button>
+    <input type="text" id="chat-in" placeholder="Ask FinBot about your bills..." onkeypress="if(event.key==='Enter') askFinBot()">
+    <button onclick="askFinBot()" title="Send query"><i class="fas fa-paper-plane"></i></button>
   </div>
 </div>
+
+<!-- CURSOR INIT -->
+<script>
+(function() {
+  const co = document.getElementById('cursor-outer');
+  const ci = document.getElementById('cursor-inner');
+  let mx=0, my=0, ox=0, oy=0;
+  document.addEventListener('mousemove', e => {
+    mx = e.clientX; my = e.clientY;
+    ci.style.left = mx + 'px';
+    ci.style.top  = my + 'px';
+  });
+  (function lerp() {
+    ox += (mx - ox) * 0.12;
+    oy += (my - oy) * 0.12;
+    co.style.left = ox + 'px';
+    co.style.top  = oy + 'px';
+    requestAnimationFrame(lerp);
+  })();
+  document.querySelectorAll('a, button, .sb-link, .stat, .scan-item, .feat-card, .upzone, input, select').forEach(el => {
+    el.addEventListener('mouseenter', () => co.classList.add('hovered'));
+    el.addEventListener('mouseleave', () => co.classList.remove('hovered'));
+  });
+})();
+</script>
 </body>
 </html>
